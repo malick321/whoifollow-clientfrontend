@@ -1,0 +1,13 @@
+{
+  // Cloudflare Workers static-assets deploy for the WhoIFollow client frontend.
+  // Vite builds to ./dist; `not_found_handling: single-page-application` serves
+  // index.html for unknown paths so vue-router (history mode) handles routes
+  // like /event/:slug. (Replaces the classic `_redirects` /* rule, which the
+  // Workers assets validator rejects as an infinite loop.)
+  "name": "whoifollow-clientfrontend",
+  "compatibility_date": "2024-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

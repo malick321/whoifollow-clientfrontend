@@ -1,3 +1,0 @@
-# Cloudflare Pages SPA fallback — serve index.html for unknown paths so
-# vue-router (history mode) handles client routes like /event/:slug.
-/*    /index.html    200
