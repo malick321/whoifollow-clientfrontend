@@ -1,10 +1,11 @@
-name: Deploy to Environments
+name: Deploy to Environments (AWS — disabled)
 
+# Inherited from the matchgeni frontend (AWS S3 + CloudFront). This client
+# repo deploys via Cloudflare instead, so this workflow is set to manual-only
+# (`workflow_dispatch`) to stop it failing on every push for missing AWS
+# secrets. Re-enable by restoring the `push` trigger + adding the AWS secrets.
 on:
-  push:
-    branches:
-      - staging
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
