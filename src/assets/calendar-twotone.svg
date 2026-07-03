@@ -1,0 +1,16 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Calendar body (lighter tone) -->
+  <path opacity="0.4" d="M3 9.5h18v8c0 2.5-1.5 4-4 4H7c-2.5 0-4-1.5-4-4v-8Z" fill="currentColor"/>
+  <!-- Top binding bar (full tone) -->
+  <path d="M21 9.5v-1.5c0-2.5-1.5-4-4-4H7c-2.5 0-4 1.5-4 4v1.5h18Z" fill="currentColor"/>
+  <!-- Left binding ring -->
+  <path d="M7.5 2c.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1s-1-.45-1-1V3c0-.55.45-1 1-1Z" fill="currentColor"/>
+  <!-- Right binding ring -->
+  <path d="M16.5 2c.55 0 1 .45 1 1v3.5c0 .55-.45 1-1 1s-1-.45-1-1V3c0-.55.45-1 1-1Z" fill="currentColor"/>
+  <!-- Date dots (full tone) — two highlighted days on the calendar grid -->
+  <path d="M8.5 14.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor"/>
+  <path d="M12 14.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor"/>
+  <path d="M15.5 14.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor"/>
+  <path opacity="0.4" d="M8.5 18a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor"/>
+  <path opacity="0.4" d="M12 18a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor"/>
+</svg>

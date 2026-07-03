@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Who I Follow</title>
+    <!--
+      Inline, blocking theme hydration. Runs BEFORE any CSS paints so the
+      <html> element already carries the `dark-mode` class on first render.
+      Without this, /src/main.ts (a deferred module script) runs after the
+      initial paint and the user sees a white flash before the dark class
+      is applied. Logic mirrors `resolveInitialTheme()` in src/theme.ts —
+      keep them in sync.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('wif_theme');
+          var mode =
+            stored === 'dark' || stored === 'light'
+              ? stored
+              : window.matchMedia &&
+                window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+          if (mode === 'dark') {
+            document.documentElement.classList.add('dark-mode');
+          }
+        } catch (e) {
+          /* localStorage blocked (private browsing / embedded iframe) —
+             fall through to the default light theme. */
+        }
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+  </html>

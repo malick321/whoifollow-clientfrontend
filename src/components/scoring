@@ -1,0 +1,150 @@
+<template>
+  <!--
+    ScoresheetDiamond
+    Renders a baseball diamond cell with base paths highlighted
+    based on the result code. Matches the physical scoresheet visual.
+  -->
+  <svg
+    :width="size"
+    :height="size"
+    :viewBox="`0 0 ${size} ${size}`"
+    :aria-label="resultCode ? `Result: ${label}` : 'Empty'"
+    role="img"
+  >
+    <!-- Background fill for the diamond area -->
+    <rect
+      :width="size"
+      :height="size"
+      :fill="bgColor"
+      rx="2"
+    />
+
+    <!-- Base paths (the four lines connecting bases) -->
+    <!-- Home → First -->
+    <line
+      :x1="cx" :y1="cy + half"
+      :x2="cx + half" :y2="cy"
+      :stroke="isFirstOrMore ? activeStroke : inactiveStroke"
+      :stroke-width="isFirstOrMore ? 2.5 : 1.5"
+      stroke-linecap="round"
+    />
+    <!-- First → Second -->
+    <line
+      :x1="cx + half" :y1="cy"
+      :x2="cx" :y2="cy - half"
+      :stroke="isSecondOrMore ? activeStroke : inactiveStroke"
+      :stroke-width="isSecondOrMore ? 2.5 : 1.5"
+      stroke-linecap="round"
+    />
+    <!-- Second → Third -->
+    <line
+      :x1="cx" :y1="cy - half"
+      :x2="cx - half" :y2="cy"
+      :stroke="isThirdOrMore ? activeStroke : inactiveStroke"
+      :stroke-width="isThirdOrMore ? 2.5 : 1.5"
+      stroke-linecap="round"
+    />
+    <!-- Third → Home -->
+    <line
+      :x1="cx - half" :y1="cy"
+      :x2="cx" :y2="cy + half"
+      :stroke="isHomeRun ? activeStroke : inactiveStroke"
+      :stroke-width="isHomeRun ? 2.5 : 1.5"
+      stroke-linecap="round"
+    />
+
+    <!-- Base dots -->
+    <circle :cx="cx"        :cy="cy + half" r="2.5" :fill="dotColor" />  <!-- Home  -->
+    <circle :cx="cx + half" :cy="cy"        r="2.5" :fill="isFirstOrMore  ? activeStroke : inactiveStroke" />  <!-- 1B -->
+    <circle :cx="cx"        :cy="cy - half" r="2.5" :fill="isSecondOrMore ? activeStroke : inactiveStroke" />  <!-- 2B -->
+    <circle :cx="cx - half" :cy="cy"        r="2.5" :fill="isThirdOrMore  ? activeStroke : inactiveStroke" />  <!-- 3B -->
+
+    <!-- Result code label in center -->
+    <text
+      v-if="resultCode"
+      :x="cx"
+      :y="cy + 1"
+      text-anchor="middle"
+      dominant-baseline="middle"
+      :font-size="labelSize"
+      font-weight="700"
+      font-family="system-ui, sans-serif"
+      :fill="textColor"
+    >
+      {{ resultCode }}
+    </text>
+  </svg>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { useResultCodesStore } from '@/stores/resultCodes'
+
+const props = defineProps({
+  resultCode: {
+    type: String,
+    default: null,
+  },
+  sportTypeId: {
+    type: Number,
+    required: true,
+  },
+  /** Overall size in px — diamond scales within this square */
+  size: {
+    type: Number,
+    default: 44,
+  },
+  /** Whether this cell is in the current active inning */
+  isActive: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+const resultCodesStore = useResultCodesStore()
+
+// ─── Geometry ────────────────────────────────────────────────────────────────
+
+const cx     = computed(() => props.size / 2)
+const cy     = computed(() => props.size / 2)
+const half   = computed(() => props.size * 0.36)          // distance from center to base
+const labelSize = computed(() => Math.max(8, props.size * 0.22))
+
+// ─── Colors ───────────────────────────────────────────────────────────────────
+
+const inactiveStroke = '#C8B97A'   // tan — matches empty scoresheet cells
+const activeStroke   = '#2D6A4F'   // dark green — lit base path
+const dotColor       = '#C8B97A'
+
+const bgColor = computed(() => {
+  if (!props.resultCode) return props.isActive ? '#D4EDDA' : 'transparent'
+  return 'transparent'
+})
+
+const textColor = computed(() => {
+  if (!props.resultCode) return 'transparent'
+  const code = resultCodesStore.get(props.sportTypeId, props.resultCode)
+  if (code?.is_defensive_out) return '#8B1A1A'  // red for outs
+  if (code?.advances_position) return '#1B4332'  // dark green for on-base
+  return '#333333'
+})
+
+// ─── Base path activation ────────────────────────────────────────────────────
+
+const codeObj = computed(() =>
+  props.resultCode ? resultCodesStore.get(props.sportTypeId, props.resultCode) : null
+)
+
+const basesAwarded = computed(() =>
+  codeObj.value?.attributes_json?.bases_awarded ?? 0
+)
+
+const isFirstOrMore  = computed(() => basesAwarded.value >= 1)
+const isSecondOrMore = computed(() => basesAwarded.value >= 2)
+const isThirdOrMore  = computed(() => basesAwarded.value >= 3)
+const isHomeRun      = computed(() => basesAwarded.value >= 4)
+
+const label = computed(() =>
+  resultCodesStore.label(props.sportTypeId, props.resultCode)
+)
+</script>

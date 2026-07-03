@@ -1,0 +1,26 @@
+<!-- Real-vector jersey silhouette. Single closed path using
+     `fill="currentColor"` so consumers can re-tint via CSS
+     (`color: …`) without re-exporting the asset.
+     Shape: two short sleeves at the shoulders + V-neck collar +
+     trapezoidal body. Designed at 24×24 viewBox so it scales
+     cleanly to the 28–36px sizes used in the bench / lineup
+     row layouts. Stroke-free: the silhouette IS the icon, so
+     it stays crisp at any size and themes against any
+     background. -->
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M3 6 L8 4 L10 5.5 A 2 2.5 0 0 0 14 5.5 L16 4 L21 6 L21 10 L18 10 L18 21 L6 21 L6 10 L3 10 Z"
+    fill="currentColor"
+  />
+  <!-- Faint inner detail: a thin slit hint where the front
+       placket would be. Drawn as a thin stroked line so it's
+       part of the same color family but reads as light
+       texture, not a separate element. -->
+  <path
+    d="M12 9 L12 13"
+    stroke="currentColor"
+    stroke-width="0.6"
+    stroke-linecap="round"
+    opacity="0.4"
+  />
+</svg>

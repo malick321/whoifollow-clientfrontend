@@ -1,0 +1,79 @@
+name: Deploy to Environments
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Download .env file
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            aws s3 cp s3://wifenvironmentfile/wif-matchgeni-frontend-live-env .env --region us-west-2
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            aws s3 cp s3://wifenvironmentfile/wif-matchgeni-frontend-stage-env .env --region us-west-2
+          fi
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build to S3
+        run: |
+          # Copy firebase service worker into dist (if present) so it's included in the sync
+          if [ -f public/firebase-messaging-sw.js ]; then
+            cp public/firebase-messaging-sw.js dist/firebase-messaging-sw.js || true
+          fi
+
+          # Sync the contents INSIDE dist to the S3 bucket root
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            BUCKET="${{ secrets.PROD_S3_BUCKET }}"
+            cd dist
+            aws s3 sync . s3://$BUCKET/ --delete
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            BUCKET="${{ secrets.STAGE_S3_BUCKET }}"
+            cd dist
+            aws s3 sync . s3://$BUCKET/ --delete
+          else
+            echo "Branch not configured for upload. Skipping."
+          fi
+
+      - name: Invalidate CloudFront cache
+        run: |
+          # Create an invalidation so the new files are served. The distribution ID to use is read from secrets
+          # so main and staging can point to different CloudFront distributions.
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            DIST_ID="${{ secrets.PROD_CLOUDFRONT_DIST_ID }}"
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            DIST_ID="${{ secrets.STAGE_CLOUDFRONT_DIST_ID }}"
+          else
+            DIST_ID=""
+          fi
+
+          if [ -n "$DIST_ID" ]; then
+            aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
+          else
+            echo "No CloudFront distribution ID configured for this branch; skipping invalidation."
+          fi

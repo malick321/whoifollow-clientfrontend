@@ -1,0 +1,18 @@
+<!-- Line-art jersey silhouette. Same shape as `jersey-vector.svg`
+     (sleeves + body + rounded neck) but rendered as a stroked
+     outline instead of a filled silhouette. Stroke uses
+     `currentColor` so consumers can re-tint via CSS color
+     property. Painted as a CSS mask, the alpha along the
+     stroke lines determines what gets tinted — so the consumer
+     ends up with a clean line-icon look in whatever color the
+     parent's `color` resolves to. -->
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M3 6 L8 4 L10 5.5 A 2 2.5 0 0 0 14 5.5 L16 4 L21 6 L21 10 L18 10 L18 21 L6 21 L6 10 L3 10 Z"
+    stroke="currentColor"
+    stroke-width="0.75"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    fill="none"
+  />
+</svg>

@@ -1,0 +1,20 @@
+node_modules/
+# Vite build output — exclude every immediate child of dist/ EXCEPT
+# `dist/legacy/`, which is the downport mirror (tracked source code,
+# not a build artifact). See dist/legacy/README.md.
+# Note: must use `dist/*` (not `dist/`) so the negation can re-include
+# specific subpaths — git can't re-include below a fully-excluded dir.
+dist/*
+!dist/legacy/
+*.log
+vite-dev.log
+vite-dev.err.log
+.env
+.env.local
+.DS_Store
+
+# Claude Code local files
+.claude/
+
+# Backup files
+*.zip
