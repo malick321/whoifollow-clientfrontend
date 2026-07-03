@@ -1,3 +1,0 @@
-# Cloudflare Pages / Netlify SPA fallback — every path serves index.html so
-# vue-router (history mode) can handle client-side routes like /event/:slug.
-/*    /index.html    200
