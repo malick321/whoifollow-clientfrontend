@@ -35,8 +35,13 @@ const likeBusyIds = ref<Set<string>>(new Set())
 const mutationBusyIds = ref<Set<string>>(new Set())
 const selectedLikersPost = ref<OpinionPost | null>(null)
 const feedSentinel = ref<HTMLElement | null>(null)
+// Facebook-style: scrolling back to the top auto-loads newer posts (no button).
+const topSentinel = ref<HTMLElement | null>(null)
+const loadingNewer = ref(false)
+let lastNewerCheck = 0
 
 let observer: IntersectionObserver | null = null
+let topObserver: IntersectionObserver | null = null
 
 const currentUserName = computed(() => authUserName.value || 'there')
 
@@ -137,6 +142,34 @@ function setupObserver() {
   observer.observe(feedSentinel.value)
 }
 
+// Fetch the latest page and prepend any posts we don't already have. Throttled
+// so returning to the top repeatedly doesn't hammer the API.
+async function loadNewer() {
+  const now = Date.now()
+  if (loading.value || loadingNewer.value || now - lastNewerCheck < 6000) return
+  lastNewerCheck = now
+  loadingNewer.value = true
+  try {
+    const page = await fetchOpinionPosts({ cursor: null, limit: FEED_LIMIT })
+    const existing = new Set(posts.value.map((p) => p.id))
+    const fresh = page.posts.filter((p) => !existing.has(p.id))
+    if (fresh.length) posts.value = dedupePosts([...fresh, ...posts.value])
+  } catch {
+    // Background refresh — stay quiet on failure.
+  } finally {
+    loadingNewer.value = false
+  }
+}
+
+function setupTopObserver() {
+  topObserver?.disconnect()
+  if (!topSentinel.value) return
+  topObserver = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) void loadNewer()
+  })
+  topObserver.observe(topSentinel.value)
+}
+
 function onPostCreated(post: OpinionPost) {
   posts.value = dedupePosts([post, ...posts.value])
 }
@@ -234,10 +267,15 @@ onMounted(async () => {
   await Promise.all([loadPosts(true), loadSpecialists(true)])
   await nextTick()
   setupObserver()
+  // Skip the initial (already-intersecting) fire so we don't refetch right
+  // after the first load; it fires again only when the user scrolls back up.
+  lastNewerCheck = Date.now()
+  setupTopObserver()
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
+  topObserver?.disconnect()
 })
 
 watch(nextCursor, async () => {
@@ -276,13 +314,13 @@ watch(nextCursor, async () => {
           <p>Opinions</p>
           <h1>Feed</h1>
         </div>
-        <button type="button" class="opinions-page__refresh" :disabled="loading" @click="loadPosts(true)">
-          <AppIcon name="clock" :size="17" />
-          <span>Refresh</span>
-        </button>
       </header>
 
       <PostComposer :current-user-name="currentUserName" @created="onPostCreated" />
+
+      <!-- Scrolling back to the top auto-loads newer posts (no refresh button). -->
+      <div ref="topSentinel" class="opinions-feed__top-sentinel" aria-hidden="true"></div>
+      <p v-if="loadingNewer" class="opinions-feed__newer">Checking for new posts…</p>
 
       <div v-if="loading" class="opinions-feed-skeleton">
         <div v-for="item in 4" :key="item" class="opinions-skeleton-card">
@@ -579,6 +617,18 @@ watch(nextCursor, async () => {
   place-items: center;
   color: var(--text-light);
   font-size: 0.86rem;
+}
+
+.opinions-feed__top-sentinel {
+  height: 1px;
+  margin-top: -1px;
+}
+.opinions-feed__newer {
+  margin: 0;
+  text-align: center;
+  color: var(--text-light);
+  font-size: 0.82rem;
+  padding: 4px 0;
 }
 
 .opinions-feed-skeleton,

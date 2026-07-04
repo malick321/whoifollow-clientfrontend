@@ -11,7 +11,7 @@
 // pattern). Cart state lives in the shopCart Pinia store so the badge stays
 // in sync with the drawer + detail modal.
 
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import ProductCard from '../components/shop/ProductCard.vue'
 import CategorySidebar from '../components/shop/CategorySidebar.vue'
@@ -45,6 +45,24 @@ const detailOpen = ref(false)
 const detailKey = ref<string | null>(null)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+// Infinite scroll — auto-load the next page when the sentinel nears the viewport.
+const loadSentinel = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
+
+function setupObserver() {
+  observer?.disconnect()
+  if (!loadSentinel.value) return
+  observer = new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting && nextCursor.value && !loadingMore.value && !loading.value) {
+        void loadProducts(false)
+      }
+    },
+    { rootMargin: '600px 0px' }
+  )
+  observer.observe(loadSentinel.value)
+}
 
 async function loadCategories() {
   categoriesLoading.value = true
@@ -119,6 +137,17 @@ function onRequiresAuth() {
 onMounted(async () => {
   await Promise.all([loadCategories(), loadProducts(true)])
   if (isAuthenticated.value) cart.load()
+  await nextTick()
+  setupObserver()
+})
+
+onBeforeUnmount(() => observer?.disconnect())
+
+// Re-attach the observer whenever the sentinel is (re)added after a page load
+// or a filter reset.
+watch(nextCursor, async () => {
+  await nextTick()
+  setupObserver()
 })
 </script>
 
@@ -186,15 +215,8 @@ onMounted(async () => {
             />
           </div>
 
-          <div v-if="nextCursor" class="shop-view__more">
-            <button
-              type="button"
-              class="shop-view__more-btn"
-              :disabled="loadingMore"
-              @click="loadProducts(false)"
-            >
-              {{ loadingMore ? 'Loading…' : 'Load more' }}
-            </button>
+          <div v-if="nextCursor" ref="loadSentinel" class="shop-view__more">
+            <span v-if="loadingMore" class="shop-view__more-loading">Loading…</span>
           </div>
         </template>
       </section>
@@ -400,7 +422,13 @@ onMounted(async () => {
 .shop-view__more {
   display: flex;
   justify-content: center;
+  align-items: center;
+  min-height: 44px;
   margin-top: 28px;
+}
+.shop-view__more-loading {
+  color: var(--text-light);
+  font-size: 0.86rem;
 }
 
 .shop-view__more-btn {
