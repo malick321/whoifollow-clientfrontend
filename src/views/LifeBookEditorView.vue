@@ -35,6 +35,7 @@ import {
   type LifeBook,
   type LifeBookPage
 } from '../api/lifebook'
+import { fetchDiscoverEvents, type DiscoverEvent } from '../api/discoverEvents'
 import { getWebOrigin } from '../api/config'
 import { pushToast } from '../toast-center'
 
@@ -55,8 +56,15 @@ const photoPickerOpen = ref(false)
 const photoSlotIndex = ref(0)
 const templatePickerOpen = ref(false)
 const autobuildOpen = ref(false)
-const autobuildEventId = ref('')
+const autobuildEventId = ref('') // resolved numeric event id (set when a suggestion is picked)
 const autobuilding = ref(false)
+// Event picker (search-by-name → suggestions → pick). Users don't know DB ids,
+// so they type the event's NAME and choose from live suggestions; we keep the
+// resolved id in `autobuildEventId` behind the scenes.
+const eventQuery = ref('')
+const eventSuggestions = ref<DiscoverEvent[]>([])
+const eventSearching = ref(false)
+let eventSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const activePage = computed<LifeBookPage | null>(() => pages.value[activeIndex.value] ?? null)
 const activeTemplateLabel = computed(() =>
@@ -238,7 +246,45 @@ async function save() {
 // ── Auto-build (§7) ──────────────────────────────────────────────────────────
 function openAutobuild() {
   autobuildEventId.value = book.value?.eventId ?? ''
+  eventQuery.value = ''
+  eventSuggestions.value = []
   autobuildOpen.value = true
+}
+
+// Debounced event-name search → suggestions. Typing invalidates any prior pick
+// until the user selects a suggestion again.
+function onEventQueryInput() {
+  autobuildEventId.value = ''
+  const q = eventQuery.value.trim()
+  if (eventSearchTimer) clearTimeout(eventSearchTimer)
+  if (q.length < 2) {
+    eventSuggestions.value = []
+    eventSearching.value = false
+    return
+  }
+  eventSearching.value = true
+  eventSearchTimer = setTimeout(async () => {
+    try {
+      const page = await fetchDiscoverEvents({ search: q, perPage: 8 })
+      eventSuggestions.value = page.events
+    } catch {
+      eventSuggestions.value = []
+    } finally {
+      eventSearching.value = false
+    }
+  }, 280)
+}
+
+function selectEvent(ev: DiscoverEvent) {
+  autobuildEventId.value = ev.id
+  eventQuery.value = ev.name
+  eventSuggestions.value = []
+}
+
+function clearEventSelection() {
+  autobuildEventId.value = ''
+  eventQuery.value = ''
+  eventSuggestions.value = []
 }
 
 async function runAutobuild() {
@@ -480,8 +526,45 @@ function goBack() {
           pages between your cover and back. Leave the field blank to use your recent photos.
         </p>
         <label class="lb-field">
-          <span class="lb-field__label">Event ID <span class="lb-field__opt">(optional)</span></span>
-          <input v-model="autobuildEventId" type="text" class="lb-input" placeholder="Paste an event ID" />
+          <span class="lb-field__label">Event <span class="lb-field__opt">(optional)</span></span>
+          <div class="lb-event-pick">
+            <input
+              v-model="eventQuery"
+              type="text"
+              class="lb-input"
+              placeholder="Search your events by name"
+              autocomplete="off"
+              @input="onEventQueryInput"
+            />
+            <button
+              v-if="eventQuery || autobuildEventId"
+              type="button"
+              class="lb-event-pick__clear"
+              aria-label="Clear event"
+              @click="clearEventSelection"
+            >×</button>
+
+            <ul v-if="eventSuggestions.length" class="lb-event-pick__list">
+              <li
+                v-for="ev in eventSuggestions"
+                :key="ev.id"
+                class="lb-event-pick__item"
+                @click="selectEvent(ev)"
+              >
+                <span class="lb-event-pick__name">{{ ev.name }}</span>
+                <span
+                  v-if="ev.dateRangeLabel || ev.association.name"
+                  class="lb-event-pick__meta"
+                >{{ [ev.dateRangeLabel, ev.association.name].filter(Boolean).join(' · ') }}</span>
+              </li>
+            </ul>
+            <p v-else-if="eventSearching" class="lb-event-pick__hint">Searching…</p>
+            <p
+              v-else-if="eventQuery.trim().length >= 2 && !autobuildEventId"
+              class="lb-event-pick__hint"
+            >No matching events.</p>
+          </div>
+          <span v-if="autobuildEventId" class="lb-event-pick__selected">✓ We'll use this event's photos</span>
         </label>
       </div>
       <template #footer>
@@ -809,6 +892,48 @@ function goBack() {
   outline: none;
 }
 .lb-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light-3); }
+
+/* Event picker (search-by-name → suggestions) */
+.lb-event-pick { position: relative; display: flex; flex-direction: column; }
+.lb-event-pick .lb-input { width: 100%; padding-right: 34px; }
+.lb-event-pick__clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 42px;
+  width: 34px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-light);
+  font-size: 20px;
+  line-height: 1;
+}
+.lb-event-pick__clear:hover { color: var(--text); }
+.lb-event-pick__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.lb-event-pick__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+.lb-event-pick__item:hover { background: var(--primary-light-3); }
+.lb-event-pick__name { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+.lb-event-pick__meta { font-size: 0.72rem; color: var(--text-light); }
+.lb-event-pick__hint { margin: 6px 2px 0; font-size: 0.78rem; color: var(--text-light); }
+.lb-event-pick__selected { margin-top: 6px; font-size: 0.78rem; color: var(--primary); }
 
 /* Theme chips (shared) ------------------------------------------------ */
 .lb-theme-row { display: flex; flex-wrap: wrap; gap: 8px; }
