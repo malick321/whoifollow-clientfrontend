@@ -23,6 +23,7 @@ import {
   fetchLifeBooks,
   type LifeBookSummary
 } from '../api/lifebook'
+import { fetchDiscoverEvents, type DiscoverEvent } from '../api/discoverEvents'
 import { pushToast } from '../toast-center'
 
 const router = useRouter()
@@ -35,8 +36,14 @@ const createOpen = ref(false)
 const newTitle = ref('')
 const newTheme = ref('classic')
 const autoBuildOn = ref(true)
-const newEventId = ref('')
+const newEventId = ref('') // resolved numeric event id (set when a suggestion is picked)
 const creating = ref(false)
+// Event picker — users type the event NAME and pick from live suggestions;
+// the resolved id is kept in `newEventId` behind the scenes.
+const eventQuery = ref('')
+const eventSuggestions = ref<DiscoverEvent[]>([])
+const eventSearching = ref(false)
+let eventSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 // Per-book menu / delete ------------------------------------------------------
 const menuFor = ref<string | null>(null)
@@ -63,7 +70,45 @@ function openCreate() {
   newTheme.value = 'classic'
   autoBuildOn.value = true
   newEventId.value = ''
+  eventQuery.value = ''
+  eventSuggestions.value = []
   createOpen.value = true
+}
+
+// Debounced event-name search → suggestions. Typing invalidates any prior pick
+// until the user selects a suggestion again.
+function onEventQueryInput() {
+  newEventId.value = ''
+  const q = eventQuery.value.trim()
+  if (eventSearchTimer) clearTimeout(eventSearchTimer)
+  if (q.length < 2) {
+    eventSuggestions.value = []
+    eventSearching.value = false
+    return
+  }
+  eventSearching.value = true
+  eventSearchTimer = setTimeout(async () => {
+    try {
+      const page = await fetchDiscoverEvents({ search: q, perPage: 8 })
+      eventSuggestions.value = page.events
+    } catch {
+      eventSuggestions.value = []
+    } finally {
+      eventSearching.value = false
+    }
+  }, 280)
+}
+
+function selectEvent(ev: DiscoverEvent) {
+  newEventId.value = ev.id
+  eventQuery.value = ev.name
+  eventSuggestions.value = []
+}
+
+function clearEventSelection() {
+  newEventId.value = ''
+  eventQuery.value = ''
+  eventSuggestions.value = []
 }
 
 async function submitCreate() {
@@ -236,13 +281,45 @@ async function confirmDelete() {
             <ToggleSwitch v-model="autoBuildOn" aria-label="Auto-build from an event" />
           </div>
           <label v-if="autoBuildOn" class="lb-field lb-autobuild__field">
-            <span class="lb-field__label">Event ID <span class="lb-field__opt">(optional)</span></span>
-            <input
-              v-model="newEventId"
-              type="text"
-              class="lb-input"
-              placeholder="Paste an event ID — or leave blank to use recent photos"
-            />
+            <span class="lb-field__label">Event <span class="lb-field__opt">(optional)</span></span>
+            <div class="lb-event-pick">
+              <input
+                v-model="eventQuery"
+                type="text"
+                class="lb-input"
+                placeholder="Search your events by name — or leave blank to use recent photos"
+                autocomplete="off"
+                @input="onEventQueryInput"
+              />
+              <button
+                v-if="eventQuery || newEventId"
+                type="button"
+                class="lb-event-pick__clear"
+                aria-label="Clear event"
+                @click="clearEventSelection"
+              >×</button>
+
+              <ul v-if="eventSuggestions.length" class="lb-event-pick__list">
+                <li
+                  v-for="ev in eventSuggestions"
+                  :key="ev.id"
+                  class="lb-event-pick__item"
+                  @click="selectEvent(ev)"
+                >
+                  <span class="lb-event-pick__name">{{ ev.name }}</span>
+                  <span
+                    v-if="ev.dateRangeLabel || ev.association.name"
+                    class="lb-event-pick__meta"
+                  >{{ [ev.dateRangeLabel, ev.association.name].filter(Boolean).join(' · ') }}</span>
+                </li>
+              </ul>
+              <p v-else-if="eventSearching" class="lb-event-pick__hint">Searching…</p>
+              <p
+                v-else-if="eventQuery.trim().length >= 2 && !newEventId"
+                class="lb-event-pick__hint"
+              >No matching events.</p>
+            </div>
+            <span v-if="newEventId" class="lb-event-pick__selected">✓ We'll build from this event's photos</span>
           </label>
         </div>
       </div>
@@ -553,6 +630,48 @@ async function confirmDelete() {
 .lb-autobuild__field {
   margin-top: 14px;
 }
+
+/* Event picker (search-by-name → suggestions) */
+.lb-event-pick { position: relative; display: flex; flex-direction: column; }
+.lb-event-pick .lb-input { width: 100%; padding-right: 34px; }
+.lb-event-pick__clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 42px;
+  width: 34px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-light);
+  font-size: 20px;
+  line-height: 1;
+}
+.lb-event-pick__clear:hover { color: var(--text); }
+.lb-event-pick__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.lb-event-pick__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+.lb-event-pick__item:hover { background: var(--primary-light-3); }
+.lb-event-pick__name { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+.lb-event-pick__meta { font-size: 0.72rem; color: var(--text-light); }
+.lb-event-pick__hint { margin: 6px 2px 0; font-size: 0.78rem; color: var(--text-light); }
+.lb-event-pick__selected { margin-top: 6px; font-size: 0.78rem; color: var(--primary); }
 
 .lb-confirm {
   margin: 0;
