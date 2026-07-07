@@ -50,6 +50,50 @@ const players = ref<TeamPlayerStat[]>([])
 const loaded = ref<Record<TabKey, boolean>>({ events: false, teammates: false, 'player-stats': false, 'team-stats': true })
 const loadingTab = ref(false)
 
+// ── Filters / sort (client-side, on already-loaded tab data) ─────────────────
+const eventStatus = ref<'all' | 'Upcoming' | 'Ongoing' | 'Completed'>('all')
+const memberRole = ref<'all' | 'admins' | 'players' | 'fans'>('all')
+const memberSearch = ref('')
+type PlayerSortKey = 'obp' | 'avg' | 'hr' | 'rbi' | 'r' | 'ab' | 'games'
+const playerSort = ref<PlayerSortKey>('obp')
+const PLAYER_SORTS: { key: PlayerSortKey; label: string }[] = [
+  { key: 'obp', label: 'OBP' }, { key: 'avg', label: 'AVG' }, { key: 'hr', label: 'HR' },
+  { key: 'rbi', label: 'RBI' }, { key: 'r', label: 'Runs' }, { key: 'ab', label: 'At Bats' },
+  { key: 'games', label: 'Games' }
+]
+const EVENT_STATUSES: { key: 'all' | 'Upcoming' | 'Ongoing' | 'Completed'; label: string }[] = [
+  { key: 'all', label: 'All' }, { key: 'Upcoming', label: 'Upcoming' },
+  { key: 'Ongoing', label: 'Ongoing' }, { key: 'Completed', label: 'Completed' }
+]
+const MEMBER_ROLES: { key: 'all' | 'admins' | 'players' | 'fans'; label: string }[] = [
+  { key: 'all', label: 'All' }, { key: 'admins', label: 'Admins' },
+  { key: 'players', label: 'Players' }, { key: 'fans', label: 'Fans' }
+]
+
+const filteredEvents = computed(() =>
+  eventStatus.value === 'all'
+    ? events.value
+    : events.value.filter((e) => e.statusLabel === eventStatus.value)
+)
+
+const filteredMembers = computed(() => {
+  const q = memberSearch.value.trim().toLowerCase()
+  return members.value.filter((m) => {
+    if (memberRole.value === 'admins' && !m.isAdmin) return false
+    if (memberRole.value === 'players' && !m.isPlayer) return false
+    if (memberRole.value === 'fans' && !m.isFan) return false
+    if (q && !m.name.toLowerCase().includes(q)) return false
+    return true
+  })
+})
+
+const sortedPlayers = computed(() => {
+  const key = playerSort.value
+  const num = (p: TeamPlayerStat) =>
+    key === 'avg' || key === 'obp' ? parseFloat(p[key]) : (p[key] as number)
+  return [...players.value].sort((a, b) => num(b) - num(a))
+})
+
 const winPct = computed(() => {
   const s = detail.value?.stats
   if (!s || s.games <= 0) return '—'
@@ -183,8 +227,18 @@ function goBack() {
 
       <!-- Events -->
       <template v-else-if="activeTab === 'events'">
-        <ul v-if="events.length" class="team-detail__events">
-          <li v-for="ev in events" :key="ev.id" class="td-event">
+        <div v-if="events.length" class="td-filter">
+          <button
+            v-for="s in EVENT_STATUSES"
+            :key="s.key"
+            type="button"
+            class="td-filter__chip"
+            :class="{ 'td-filter__chip--active': eventStatus === s.key }"
+            @click="eventStatus = s.key"
+          >{{ s.label }}</button>
+        </div>
+        <ul v-if="filteredEvents.length" class="team-detail__events">
+          <li v-for="ev in filteredEvents" :key="ev.id" class="td-event">
             <div class="td-event__top">
               <StatusBadge :label="ev.statusLabel" :tone="eventTone(ev.statusLabel)" />
               <span class="td-event__date">{{ ev.dateRangeLabel }}</span>
@@ -196,13 +250,26 @@ function goBack() {
             <p v-if="ev.location" class="td-event__loc"><AppIcon name="home" :size="13" /> {{ ev.location }}</p>
           </li>
         </ul>
-        <p v-else class="team-detail__empty">No events yet.</p>
+        <p v-else class="team-detail__empty">{{ events.length ? 'No events match this filter.' : 'No events yet.' }}</p>
       </template>
 
       <!-- Teammates -->
       <template v-else-if="activeTab === 'teammates'">
-        <ul v-if="members.length" class="team-detail__members">
-          <li v-for="m in members" :key="m.memberId" class="td-member">
+        <div v-if="members.length" class="td-filter td-filter--split">
+          <div class="td-filter__chips">
+            <button
+              v-for="r in MEMBER_ROLES"
+              :key="r.key"
+              type="button"
+              class="td-filter__chip"
+              :class="{ 'td-filter__chip--active': memberRole === r.key }"
+              @click="memberRole = r.key"
+            >{{ r.label }}</button>
+          </div>
+          <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
+        </div>
+        <ul v-if="filteredMembers.length" class="team-detail__members">
+          <li v-for="m in filteredMembers" :key="m.memberId" class="td-member">
             <TeamAvatar :name="m.name" :image-url="m.avatarUrl ?? undefined" size="sm" />
             <span class="td-member__copy">
               <span class="td-member__name">{{ m.name }}</span>
@@ -215,11 +282,22 @@ function goBack() {
             <span v-if="m.uniformNo" class="td-member__uniform">#{{ m.uniformNo }}</span>
           </li>
         </ul>
-        <p v-else class="team-detail__empty">No teammates yet.</p>
+        <p v-else class="team-detail__empty">{{ members.length ? 'No teammates match.' : 'No teammates yet.' }}</p>
       </template>
 
       <!-- Player Statistics -->
       <template v-else-if="activeTab === 'player-stats'">
+        <div v-if="players.length" class="td-filter">
+          <span class="td-filter__label">Sort by</span>
+          <button
+            v-for="s in PLAYER_SORTS"
+            :key="s.key"
+            type="button"
+            class="td-filter__chip"
+            :class="{ 'td-filter__chip--active': playerSort === s.key }"
+            @click="playerSort = s.key"
+          >{{ s.label }}</button>
+        </div>
         <div v-if="players.length" class="team-detail__table-wrap">
           <table class="team-detail__table">
             <thead>
@@ -229,7 +307,7 @@ function goBack() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in players" :key="p.userId">
+              <tr v-for="p in sortedPlayers" :key="p.userId">
                 <td class="td-l">{{ p.name }}</td>
                 <td>{{ p.games }}</td><td>{{ p.ab }}</td><td>{{ p.h }}</td>
                 <td>{{ p.hr }}</td><td>{{ p.rbi }}</td><td>{{ p.r }}</td><td>{{ p.bb }}</td>
@@ -318,6 +396,51 @@ function goBack() {
 /* Panel */
 .team-detail__panel { min-height: 120px; }
 .team-detail__empty { color: var(--secondary); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
+
+/* Filter / sort bars */
+.td-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.td-filter--split { justify-content: space-between; }
+.td-filter__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.td-filter__label { color: var(--secondary); font-size: 0.78rem; margin-right: 2px; }
+.td-filter__chip {
+  appearance: none;
+  border: 1px solid var(--border-divider);
+  background: var(--surface-btn-solid, var(--surface-card));
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.td-filter__chip:hover { color: var(--primary); border-color: var(--border-accent-hover, var(--primary-light-2)); }
+.td-filter__chip--active {
+  background: var(--primary-light-3);
+  border-color: var(--primary-light-2);
+  color: var(--primary);
+}
+.td-search {
+  flex: 0 1 220px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  outline: none;
+}
+.td-search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light-3); }
 
 /* Skeletons (shimmer comes from the global .shimmer-block / .shimmer-circle) */
 .td-sk__avatar { width: 56px; height: 56px; border-radius: 999px; display: block; }
