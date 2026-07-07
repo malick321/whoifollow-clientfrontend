@@ -87,6 +87,55 @@ export async function fetchTeamPlayerStats(teamId: string): Promise<TeamPlayerSt
   return Array.isArray(data?.players) ? data!.players : []
 }
 
+// ── Team Statistics tab (per-game table) ─────────────────────────────────────
+
+export interface TeamGameStatRow {
+  gameId: string
+  date: string | null
+  opponentName: string
+  result: 'won' | 'lost' | null
+  eventName: string | null
+  onbase: string
+  avg: string
+  ab: number
+  h: number
+  one_b: number
+  two_b: number
+  three_b: number
+  hr: number
+  rbi: number
+  r: number
+  bb: number
+  sac: number
+  e: number
+}
+
+export interface TeamGameStatsTotal {
+  onbase: string
+  avg: string
+  ab: number
+  h: number
+  one_b: number
+  two_b: number
+  three_b: number
+  hr: number
+  rbi: number
+  r: number
+  bb: number
+  sac: number
+  e: number
+}
+
+export interface TeamGameStats {
+  games: TeamGameStatRow[]
+  total: TeamGameStatsTotal | null
+}
+
+export async function fetchTeamGameStats(teamId: string): Promise<TeamGameStats> {
+  const data = await fetchData<TeamGameStats>(`/chat/teams/${encodeURIComponent(teamId)}/team-stats`)
+  return { games: Array.isArray(data?.games) ? data!.games : [], total: data?.total ?? null }
+}
+
 // ── Teammates tab ────────────────────────────────────────────────────────────
 
 export interface TeamMemberItem {

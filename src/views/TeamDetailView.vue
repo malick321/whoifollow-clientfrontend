@@ -17,10 +17,12 @@ import { fetchTeamDetail, type ChatTeamDetail } from '../api/chat'
 import {
   fetchTeamAssociation,
   fetchTeamEvents,
+  fetchTeamGameStats,
   fetchTeamMembers,
   fetchTeamPlayerStats,
   type TeamAssociation,
   type TeamEventItem,
+  type TeamGameStats,
   type TeamMemberItem,
   type TeamPlayerStat
 } from '../api/teamDetail'
@@ -46,8 +48,36 @@ const activeTab = ref<TabKey>('events')
 const events = ref<TeamEventItem[]>([])
 const members = ref<TeamMemberItem[]>([])
 const players = ref<TeamPlayerStat[]>([])
-const loaded = ref<Record<TabKey, boolean>>({ events: false, teammates: false, 'player-stats': false, 'team-stats': true })
+const teamGameStats = ref<TeamGameStats>({ games: [], total: null })
+const loaded = ref<Record<TabKey, boolean>>({ events: false, teammates: false, 'player-stats': false, 'team-stats': false })
 const loadingTab = ref(false)
+
+// Team Statistics table columns (per-game) + click-to-sort.
+const STAT_COLS: { key: string; label: string }[] = [
+  { key: 'onbase', label: 'Onbase %' }, { key: 'avg', label: 'Average' },
+  { key: 'ab', label: 'AB' }, { key: 'h', label: 'H' }, { key: 'one_b', label: '1B' },
+  { key: 'two_b', label: '2B' }, { key: 'three_b', label: '3B' }, { key: 'hr', label: 'HR' },
+  { key: 'rbi', label: 'RBI' }, { key: 'r', label: 'R' }, { key: 'bb', label: 'BB' },
+  { key: 'sac', label: 'SAC' }, { key: 'e', label: 'E' }
+]
+const statSort = ref<string>('')
+const statDir = ref<'asc' | 'desc'>('desc')
+function sortByCol(key: string) {
+  if (statSort.value === key) statDir.value = statDir.value === 'desc' ? 'asc' : 'desc'
+  else { statSort.value = key; statDir.value = 'desc' }
+}
+const sortedGameStats = computed(() => {
+  const rows = teamGameStats.value.games
+  if (!statSort.value) return rows
+  const key = statSort.value
+  const num = (row: Record<string, unknown>) =>
+    key === 'onbase' || key === 'avg' ? parseFloat(String(row[key])) : Number(row[key])
+  return [...rows].sort((a, b) =>
+    statDir.value === 'desc'
+      ? num(b as unknown as Record<string, unknown>) - num(a as unknown as Record<string, unknown>)
+      : num(a as unknown as Record<string, unknown>) - num(b as unknown as Record<string, unknown>)
+  )
+})
 
 // ── Filters / sort (client-side, on already-loaded tab data) ─────────────────
 const eventStatus = ref<'all' | 'Upcoming' | 'Ongoing' | 'Completed'>('all')
@@ -93,12 +123,6 @@ const sortedPlayers = computed(() => {
   return [...players.value].sort((a, b) => num(b) - num(a))
 })
 
-const winPct = computed(() => {
-  const s = detail.value?.stats
-  if (!s || s.games <= 0) return '—'
-  return `${Math.round((s.won / s.games) * 100)}%`
-})
-
 function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   if (status === 'Ongoing') return 'success'
   if (status === 'Completed') return 'secondary'
@@ -112,6 +136,7 @@ async function loadTab(tab: TabKey) {
     if (tab === 'events') events.value = await fetchTeamEvents(teamId.value)
     else if (tab === 'teammates') members.value = await fetchTeamMembers(teamId.value)
     else if (tab === 'player-stats') players.value = await fetchTeamPlayerStats(teamId.value)
+    else if (tab === 'team-stats') teamGameStats.value = await fetchTeamGameStats(teamId.value)
     loaded.value[tab] = true
   } finally {
     loadingTab.value = false
@@ -309,13 +334,44 @@ onMounted(async () => {
         <p v-else class="team-detail__empty">No player statistics yet.</p>
       </template>
 
-      <!-- Team Statistics -->
+      <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
       <template v-else-if="activeTab === 'team-stats'">
-        <div v-if="detail" class="team-detail__stat-tiles">
-          <div class="td-stat"><b>{{ detail.stats.games }}</b><span>Games</span></div>
-          <div class="td-stat td-stat--win"><b>{{ detail.stats.won }}</b><span>Won</span></div>
-          <div class="td-stat td-stat--loss"><b>{{ detail.stats.lost }}</b><span>Lost</span></div>
-          <div class="td-stat"><b>{{ winPct }}</b><span>Win %</span></div>
+        <div v-if="teamGameStats.games.length" class="team-detail__table-wrap">
+          <table class="team-detail__table team-detail__stats-table">
+            <thead>
+              <tr>
+                <th class="td-l">Game</th>
+                <th
+                  v-for="c in STAT_COLS"
+                  :key="c.key"
+                  class="td-sortable"
+                  :class="{ 'td-sorted': statSort === c.key }"
+                  @click="sortByCol(c.key)"
+                >{{ c.label }}<span v-if="statSort === c.key" class="td-sortarrow">{{ statDir === 'desc' ? '▾' : '▴' }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="teamGameStats.total" class="td-total-row">
+                <td class="td-l"><b>Total</b></td>
+                <td v-for="c in STAT_COLS" :key="c.key"><b>{{ (teamGameStats.total as Record<string, unknown>)[c.key] }}</b></td>
+              </tr>
+              <tr v-for="row in sortedGameStats" :key="row.gameId">
+                <td class="td-l">
+                  <span class="td-game__date">{{ row.date || '—' }}</span>
+                  <span class="td-game__line">
+                    <StatusBadge
+                      v-if="row.result"
+                      :label="row.result === 'won' ? 'Won' : 'Lost'"
+                      :tone="row.result === 'won' ? 'success' : 'danger'"
+                    />
+                    <span class="td-game__opp">vs {{ row.opponentName }}</span>
+                  </span>
+                  <span v-if="row.eventName" class="td-game__event">{{ row.eventName }}</span>
+                </td>
+                <td v-for="c in STAT_COLS" :key="c.key">{{ (row as unknown as Record<string, unknown>)[c.key] }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         <p v-else class="team-detail__empty">No team statistics yet.</p>
       </template>
@@ -482,6 +538,18 @@ onMounted(async () => {
 .team-detail__table td { border-bottom: 1px solid var(--border-divider); color: var(--text); font-variant-numeric: tabular-nums; }
 .team-detail__table .td-l { text-align: left; }
 .team-detail__table tbody tr:hover { background: var(--surface-pill); }
+
+/* Team Statistics per-game table */
+.team-detail__stats-table th.td-sortable { cursor: pointer; user-select: none; }
+.team-detail__stats-table th.td-sortable:hover { color: var(--primary); }
+.team-detail__stats-table th.td-sorted { color: var(--primary); }
+.td-sortarrow { margin-left: 2px; }
+.team-detail__stats-table .td-total-row td { background: var(--surface-pill); border-bottom: 2px solid var(--border-divider); }
+.team-detail__stats-table .td-l { min-width: 190px; }
+.td-game__date { display: block; color: var(--text-light); font-size: 0.72rem; }
+.td-game__line { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; }
+.td-game__opp { color: var(--text); font-weight: 500; }
+.td-game__event { display: block; color: var(--secondary); font-size: 0.74rem; margin-top: 2px; }
 
 /* Team stat tiles */
 .team-detail__stat-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
