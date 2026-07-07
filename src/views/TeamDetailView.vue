@@ -318,6 +318,16 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
               {{ [ev.association, ev.eventType].filter(Boolean).join(' · ') }}
             </p>
             <p v-if="ev.location" class="td-event__loc"><AppIcon name="home" :size="13" /> {{ ev.location }}</p>
+            <div v-if="ev.goingCount || ev.record" class="td-event__foot">
+              <span v-if="ev.goingCount" class="td-event__going">
+                <AppIcon name="people" :size="13" /> {{ ev.goingCount }} going
+              </span>
+              <span v-if="ev.record" class="td-event__record">
+                <span><b>{{ ev.record.games }}</b> Games</span>
+                <span><b>{{ ev.record.won }}</b> Won</span>
+                <span><b>{{ ev.record.lost }}</b> Lost</span>
+              </span>
+            </div>
           </li>
         </ul>
         <p v-else class="team-detail__empty">{{ events.length ? 'No events match this filter.' : 'No events yet.' }}</p>
@@ -617,6 +627,20 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 .td-event__name { margin: 6px 0 0; font-size: 1rem; font-weight: 500; color: var(--text); }
 .td-event__sub { margin: 2px 0 0; color: var(--secondary); font-size: 0.82rem; }
 .td-event__loc { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0; color: var(--text-light); font-size: 0.8rem; }
+.td-event__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-divider);
+}
+.td-event__going { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 0.8rem; }
+.td-event__record { display: inline-flex; gap: 14px; }
+.td-event__record span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-light); font-size: 0.76rem; }
+.td-event__record b { color: var(--text); font-size: 0.9rem; font-weight: 600; }
 
 /* Members */
 .team-detail__members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

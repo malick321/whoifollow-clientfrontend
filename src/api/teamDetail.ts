@@ -52,6 +52,8 @@ export interface TeamEventItem {
   location?: string | null
   dateRangeLabel: string
   statusLabel: string
+  goingCount?: number
+  record?: { games: number; won: number; lost: number }
 }
 
 export async function fetchTeamEvents(teamId: string): Promise<TeamEventItem[]> {
