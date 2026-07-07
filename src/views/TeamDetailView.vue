@@ -116,24 +116,42 @@ function goBack() {
           </button>
         </div>
         <div class="team-heading">
-          <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="lg" />
-          <h1>{{ detail?.name || (loadingHeader ? 'Loading…' : 'Team') }}</h1>
+          <template v-if="loadingHeader">
+            <span class="shimmer-circle td-sk__avatar" aria-hidden="true"></span>
+            <span class="shimmer-block td-sk__title" aria-hidden="true"></span>
+          </template>
+          <template v-else>
+            <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="lg" />
+            <h1>{{ detail?.name || 'Team' }}</h1>
+          </template>
         </div>
-        <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
-          {{ [detail.categoryLabel, detail.ageGenderLabel].filter(Boolean).join(' · ') }}
-        </p>
-        <p v-if="association" class="hero-copy team-detail__assoc">
-          <AppIcon name="award" :size="14" />
-          <span>{{ association.name }}</span>
-          <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
-        </p>
+
+        <template v-if="loadingHeader">
+          <span class="shimmer-block td-sk__line" aria-hidden="true"></span>
+          <span class="shimmer-block td-sk__line td-sk__line--short" aria-hidden="true"></span>
+        </template>
+        <template v-else>
+          <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
+            {{ [detail.categoryLabel, detail.ageGenderLabel].filter(Boolean).join(' · ') }}
+          </p>
+          <p v-if="association" class="hero-copy team-detail__assoc">
+            <AppIcon name="award" :size="14" />
+            <span>{{ association.name }}</span>
+            <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
+          </p>
+        </template>
       </div>
 
       <div class="hero-status">
         <div class="team-detail__record">
-          <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b>Games</span>
-          <span class="team-detail__record-item"><b>{{ detail?.stats.won ?? 0 }}</b>Won</span>
-          <span class="team-detail__record-item"><b>{{ detail?.stats.lost ?? 0 }}</b>Lost</span>
+          <template v-if="loadingHeader">
+            <span v-for="n in 3" :key="n" class="shimmer-block td-sk__tile" aria-hidden="true"></span>
+          </template>
+          <template v-else>
+            <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b>Games</span>
+            <span class="team-detail__record-item"><b>{{ detail?.stats.won ?? 0 }}</b>Won</span>
+            <span class="team-detail__record-item"><b>{{ detail?.stats.lost ?? 0 }}</b>Lost</span>
+          </template>
         </div>
       </div>
     </section>
@@ -153,7 +171,15 @@ function goBack() {
     </nav>
 
     <section class="team-detail__panel">
-      <p v-if="loadingTab" class="team-detail__loading">Loading…</p>
+      <div v-if="loadingTab" class="td-sk-list" aria-busy="true">
+        <div v-for="n in 5" :key="`tsk-${n}`" class="td-sk-row">
+          <span class="shimmer-circle td-sk-row__avatar"></span>
+          <span class="td-sk-row__lines">
+            <span class="shimmer-block td-sk-row__l1"></span>
+            <span class="shimmer-block td-sk-row__l2"></span>
+          </span>
+        </div>
+      </div>
 
       <!-- Events -->
       <template v-else-if="activeTab === 'events'">
@@ -291,8 +317,20 @@ function goBack() {
 
 /* Panel */
 .team-detail__panel { min-height: 120px; }
-.team-detail__loading,
 .team-detail__empty { color: var(--secondary); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
+
+/* Skeletons (shimmer comes from the global .shimmer-block / .shimmer-circle) */
+.td-sk__avatar { width: 56px; height: 56px; border-radius: 999px; display: block; }
+.td-sk__title { display: block; width: 200px; max-width: 60%; height: 22px; border-radius: 7px; }
+.td-sk__line { display: block; width: 240px; max-width: 70%; height: 12px; border-radius: 6px; margin-top: 10px; }
+.td-sk__line--short { width: 150px; }
+.td-sk__tile { width: 46px; height: 40px; border-radius: 8px; }
+.td-sk-list { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.td-sk-row { display: flex; align-items: center; gap: 12px; }
+.td-sk-row__avatar { width: 40px; height: 40px; border-radius: 999px; flex: 0 0 auto; }
+.td-sk-row__lines { display: flex; flex-direction: column; gap: 7px; flex: 1 1 auto; }
+.td-sk-row__l1 { display: block; height: 13px; width: 45%; border-radius: 6px; }
+.td-sk-row__l2 { display: block; height: 11px; width: 65%; border-radius: 6px; }
 
 /* Events */
 .team-detail__events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
