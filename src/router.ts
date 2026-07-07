@@ -31,6 +31,7 @@ import AssociationEventSummaryReportView from './views/AssociationEventSummaryRe
 import PublicEventView from './views/PublicEventView.vue'
 import LoginView from './views/LoginView.vue'
 import ChatView from './views/ChatView.vue'
+import TeamDetailView from './views/TeamDetailView.vue'
 import LifeBookListView from './views/LifeBookListView.vue'
 import LifeBookEditorView from './views/LifeBookEditorView.vue'
 import LifeBookSharedView from './views/LifeBookSharedView.vue'
@@ -122,6 +123,8 @@ const router = createRouter({
     { path: '/', redirect: { name: 'newgametime-for-you' } },
     // Chat — WhatsApp-style messaging (logged-in members; not anonymous).
     { path: '/chat', name: 'chat', component: ChatView },
+    // Team detail page (4 tabs) — opened from the chat team info panel.
+    { path: '/team/:teamId', name: 'team-detail', component: TeamDetailView },
     // My Life Book — digital photo-book builder (members; shared flipbook is public)
     { path: '/lifebook', name: 'lifebook', component: LifeBookListView },
     { path: '/lifebook/:guid/edit', name: 'lifebook-editor', component: LifeBookEditorView },

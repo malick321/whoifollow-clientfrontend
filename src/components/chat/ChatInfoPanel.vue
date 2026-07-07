@@ -12,6 +12,7 @@
 //   - DM: the other user's profile summary + shared files (unchanged).
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import TeamAvatar from '../TeamAvatar.vue'
 import AppIcon from '../AppIcon.vue'
 import PresenceDot from './PresenceDot.vue'
@@ -236,12 +237,21 @@ function openInvite() {
   inviteOpen.value = true
 }
 
-function openStatistics() {
-  pushToast({
-    tone: 'success',
-    title: 'Statistics',
-    message: 'Team statistics open in the participation view.'
+const router = useRouter()
+
+// Open the full Team detail page (Events / Teammates / Player Statistics /
+// Team Statistics), optionally at a specific tab.
+function openTeamDetail(tab?: 'events' | 'teammates' | 'player-stats' | 'team-stats') {
+  if (!teamId.value) return
+  router.push({
+    name: 'team-detail',
+    params: { teamId: teamId.value },
+    query: tab ? { tab } : {}
   })
+}
+
+function openStatistics() {
+  openTeamDetail('team-stats')
 }
 
 // ── Collapsible rows + shared files ──────────────────────────────
@@ -277,10 +287,6 @@ const sharedFilesCount = computed(() =>
 const teammatesCount = computed(() =>
   detail.value ? counts.value.teammates : participants.value.length
 )
-
-function noop() {
-  /* placeholder for rows that route elsewhere — wired separately */
-}
 
 // Reset cached state when switching conversation; (re)load team detail.
 watch(
@@ -467,12 +473,12 @@ watch(teamId, () => {
 
         <!-- Rows with counts -->
         <div class="info-panel__rows">
-          <button type="button" class="info-row" @click="noop">
+          <button type="button" class="info-row" @click="openTeamDetail('events')">
             <span class="info-row__label">All Events</span>
             <span class="info-row__count">{{ counts.allEvents }}</span>
             <span class="info-row__chevron">›</span>
           </button>
-          <button type="button" class="info-row" @click="noop">
+          <button type="button" class="info-row" @click="openTeamDetail()">
             <span class="info-row__label">Associations</span>
             <span class="info-row__count">{{ counts.associations }}</span>
             <span class="info-row__chevron">›</span>
