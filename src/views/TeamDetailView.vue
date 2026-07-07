@@ -8,8 +8,8 @@
 // Header + Team Statistics reuse fetchTeamDetail; the other tabs lazy-load
 // their own lean v2 endpoints on first activation.
 
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -36,7 +36,19 @@ const TABS: { key: TabKey; label: string }[] = [
 ]
 
 const route = useRoute()
+const router = useRouter()
 const teamId = computed(() => String(route.params.teamId ?? ''))
+
+// Teammate row ellipsis menu (one open at a time; closes on outside click).
+const openMemberMenu = ref<string | null>(null)
+function toggleMemberMenu(id: string) {
+  openMemberMenu.value = openMemberMenu.value === id ? null : id
+}
+function viewPlayerStats(userId: string | null | undefined) {
+  openMemberMenu.value = null
+  if (userId) router.push({ name: 'player-passport', params: { playerId: userId } })
+}
+function closeMemberMenu() { openMemberMenu.value = null }
 
 const detail = ref<ChatTeamDetail | null>(null)
 const association = ref<TeamAssociation | null>(null)
@@ -164,8 +176,10 @@ onMounted(async () => {
   loadingHeader.value = false
 
   void loadTab(activeTab.value)
+  document.addEventListener('click', closeMemberMenu)
 })
 
+onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 </script>
 
 <template>
@@ -270,31 +284,48 @@ onMounted(async () => {
 
       <!-- Teammates -->
       <template v-else-if="activeTab === 'teammates'">
-        <div v-if="members.length" class="td-filter td-filter--split">
-          <div class="td-filter__chips">
-            <button
-              v-for="r in MEMBER_ROLES"
-              :key="r.key"
-              type="button"
-              class="td-filter__chip"
-              :class="{ 'td-filter__chip--active': memberRole === r.key }"
-              @click="memberRole = r.key"
-            >{{ r.label }}</button>
-          </div>
+        <div v-if="members.length" class="td-members-head">
+          <span class="td-members-count">{{ filteredMembers.length }} {{ filteredMembers.length === 1 ? 'Teammate' : 'Teammates' }}</span>
           <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
+        </div>
+        <div v-if="members.length" class="td-filter">
+          <button
+            v-for="r in MEMBER_ROLES"
+            :key="r.key"
+            type="button"
+            class="td-filter__chip"
+            :class="{ 'td-filter__chip--active': memberRole === r.key }"
+            @click="memberRole = r.key"
+          >{{ r.label }}</button>
         </div>
         <ul v-if="filteredMembers.length" class="team-detail__members">
           <li v-for="m in filteredMembers" :key="m.memberId" class="td-member">
             <TeamAvatar :name="m.name" :image-url="m.avatarUrl ?? undefined" size="sm" />
             <span class="td-member__copy">
               <span class="td-member__name">{{ m.name }}</span>
-              <span class="td-member__role">
-                <template v-if="m.isAdmin">Admin</template>
-                <template v-else-if="m.isFan">Fan</template>
-                <template v-else>Member</template>
+              <span class="td-member__badges">
+                <span v-if="m.isAdmin" class="td-badge td-badge--admin">Admin</span>
+                <span v-if="m.isFan" class="td-badge td-badge--fan">Fan</span>
+                <span v-if="!m.isAdmin && !m.isFan" class="td-badge">Member</span>
               </span>
             </span>
-            <span v-if="m.uniformNo" class="td-member__uniform">#{{ m.uniformNo }}</span>
+            <span v-if="m.isPlayer && m.uniformNo" class="td-member__jersey" title="Jersey number">#{{ m.uniformNo }}</span>
+            <div class="td-member__menu" @click.stop>
+              <button
+                type="button"
+                class="td-ellipsis"
+                :aria-expanded="openMemberMenu === m.memberId"
+                aria-label="Teammate options"
+                @click="toggleMemberMenu(m.memberId)"
+              >⋯</button>
+              <ul v-if="openMemberMenu === m.memberId" class="td-menu">
+                <li>
+                  <button type="button" :disabled="!m.userId" @click="viewPlayerStats(m.userId)">
+                    View player stats
+                  </button>
+                </li>
+              </ul>
+            </div>
           </li>
         </ul>
         <p v-else class="team-detail__empty">{{ members.length ? 'No teammates match.' : 'No teammates yet.' }}</p>
@@ -529,6 +560,46 @@ onMounted(async () => {
 .td-member__name { color: var(--text); font-size: 0.9rem; }
 .td-member__role { color: var(--secondary); font-size: 0.76rem; }
 .td-member__uniform { color: var(--text-light); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.td-members-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.td-members-count { color: var(--text); font-weight: 500; font-size: 0.95rem; }
+.td-member__badges { display: flex; gap: 6px; margin-top: 2px; }
+.td-badge { font-size: 0.68rem; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: var(--surface-pill); color: var(--secondary); }
+.td-badge--admin { background: var(--primary-light-3); color: var(--primary); }
+.td-badge--fan { background: #fff0df; color: #b57a34; }
+.td-member__jersey { color: var(--text-light); font-size: 0.8rem; font-variant-numeric: tabular-nums; background: var(--surface-pill); padding: 2px 8px; border-radius: 6px; }
+.td-member__menu { position: relative; flex: 0 0 auto; }
+.td-ellipsis { appearance: none; border: none; background: none; color: var(--secondary); font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.td-ellipsis:hover { background: var(--surface-pill); color: var(--primary); }
+.td-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 170px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-divider);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+.td-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.td-menu button:hover:not(:disabled) { background: var(--surface-pill); color: var(--primary); }
+.td-menu button:disabled { color: var(--text-light); cursor: default; }
 
 /* Player stats table */
 .team-detail__table-wrap { overflow-x: auto; }
