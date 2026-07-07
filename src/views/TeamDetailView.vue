@@ -106,42 +106,37 @@ function goBack() {
 
 <template>
   <main class="team-detail">
-    <!-- Header -->
-    <header class="team-detail__hero">
-      <button type="button" class="team-detail__back" @click="goBack">
-        <AppIcon name="close" :size="16" /> Back
-      </button>
-
-      <div v-if="loadingHeader" class="team-detail__hero-body">
-        <span class="shimmer-circle team-detail__sk-avatar"></span>
-        <span class="shimmer-block team-detail__sk-line"></span>
+    <!-- Header — reuses the finalized global `.hero` design system. -->
+    <section class="hero team-detail__hero">
+      <div class="hero__main">
+        <div class="hero-title-row">
+          <p class="eyebrow">Team Details</p>
+          <button type="button" class="team-detail__back" @click="goBack">
+            <AppIcon name="close" :size="14" /> Back
+          </button>
+        </div>
+        <div class="team-heading">
+          <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="lg" />
+          <h1>{{ detail?.name || (loadingHeader ? 'Loading…' : 'Team') }}</h1>
+        </div>
+        <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
+          {{ [detail.categoryLabel, detail.ageGenderLabel].filter(Boolean).join(' · ') }}
+        </p>
+        <p v-if="association" class="hero-copy team-detail__assoc">
+          <AppIcon name="award" :size="14" />
+          <span>{{ association.name }}</span>
+          <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
+        </p>
       </div>
 
-      <div v-else-if="detail" class="team-detail__hero-body">
-        <TeamAvatar :name="detail.name" :image-url="detail.logoUrl ?? undefined" size="lg" />
-        <div class="team-detail__identity">
-          <h1 class="team-detail__name">{{ detail.name }}</h1>
-          <p class="team-detail__meta">
-            <span v-if="detail.categoryLabel">{{ detail.categoryLabel }}</span>
-            <span v-if="detail.ageGenderLabel" class="team-detail__dot">·</span>
-            <span v-if="detail.ageGenderLabel">{{ detail.ageGenderLabel }}</span>
-          </p>
-          <p v-if="association" class="team-detail__assoc">
-            <AppIcon name="award" :size="14" />
-            <span>{{ association.name }}</span>
-            <span v-if="association.registrationNo" class="team-detail__assoc-reg">#{{ association.registrationNo }}</span>
-          </p>
-        </div>
-
+      <div class="hero-status">
         <div class="team-detail__record">
-          <span class="team-detail__record-item"><b>{{ detail.stats.games }}</b>Games</span>
-          <span class="team-detail__record-item"><b>{{ detail.stats.won }}</b>Won</span>
-          <span class="team-detail__record-item"><b>{{ detail.stats.lost }}</b>Lost</span>
+          <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b>Games</span>
+          <span class="team-detail__record-item"><b>{{ detail?.stats.won ?? 0 }}</b>Won</span>
+          <span class="team-detail__record-item"><b>{{ detail?.stats.lost ?? 0 }}</b>Lost</span>
         </div>
       </div>
-
-      <div v-else class="team-detail__hero-body team-detail__empty">Team not found.</div>
-    </header>
+    </section>
 
     <!-- Tabs -->
     <nav class="team-detail__tabs" role="tablist">
@@ -244,14 +239,8 @@ function goBack() {
   gap: 16px;
 }
 
-/* Hero */
-.team-detail__hero {
-  background: var(--surface-card);
-  border: 1px solid var(--border-divider);
-  border-radius: 16px;
-  padding: 14px 18px 18px;
-  box-shadow: var(--shadow-soft);
-}
+/* Hero — layout handled by the global `.hero` / `.hero__main` / `.hero-status`
+   design system; only the extras below are local. */
 .team-detail__back {
   display: inline-flex;
   align-items: center;
@@ -262,27 +251,9 @@ function goBack() {
   font: inherit;
   font-size: 0.82rem;
   cursor: pointer;
-  padding: 2px 0 10px;
 }
 .team-detail__back:hover { color: var(--primary); }
-.team-detail__hero-body {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.team-detail__identity { flex: 1 1 auto; min-width: 0; }
-.team-detail__name { margin: 0; font-size: 1.3rem; font-weight: 500; color: var(--text); }
-.team-detail__meta { margin: 3px 0 0; color: var(--secondary); font-size: 0.86rem; }
-.team-detail__dot { margin: 0 6px; opacity: 0.6; }
-.team-detail__assoc {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0 0;
-  color: var(--primary);
-  font-size: 0.82rem;
-}
+.team-detail__assoc { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); }
 .team-detail__assoc-reg { color: var(--text-light); }
 .team-detail__record { display: flex; gap: 18px; }
 .team-detail__record-item {
@@ -293,8 +264,6 @@ function goBack() {
   font-size: 0.72rem;
 }
 .team-detail__record-item b { color: var(--text); font-size: 1.15rem; font-weight: 600; }
-.team-detail__sk-avatar { width: 64px; height: 64px; }
-.team-detail__sk-line { display: block; height: 16px; width: 200px; border-radius: 6px; }
 
 /* Tabs */
 .team-detail__tabs {

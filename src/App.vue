@@ -41,7 +41,7 @@ const showTopbar = computed(() => {
  *  association portal (its own topbar), the public shared Life Book, and any
  *  association/matchgeni route. */
 const MEMBER_PREFIXES = [
-  '/events', '/my/events', '/teams', '/my/teams', '/associations', '/for-you',
+  '/events', '/my/events', '/teams', '/my/teams', '/team', '/associations', '/for-you',
   '/chat', '/calendar', '/tasks', '/shop', '/opinions', '/lifebook',
   '/players', '/my/stats'
 ]
