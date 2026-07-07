@@ -50,6 +50,9 @@ function viewPlayerStats(userId: string | null | undefined) {
 }
 function closeMemberMenu() { openMemberMenu.value = null }
 
+// Header actions — Message Team / Settings live in the chat surface.
+function goToChat() { router.push({ name: 'chat' }) }
+
 const detail = ref<ChatTeamDetail | null>(null)
 const association = ref<TeamAssociation | null>(null)
 const loadingHeader = ref(true)
@@ -92,7 +95,11 @@ const sortedGameStats = computed(() => {
 })
 
 // ── Filters / sort (client-side, on already-loaded tab data) ─────────────────
-const eventStatus = ref<'all' | 'Upcoming' | 'Ongoing' | 'Completed'>('all')
+const filterYear = ref('all')
+const filterType = ref('all')
+const filterAssoc = ref('all')
+const filterState = ref('all')
+const showPast = ref(true)
 const memberRole = ref<'all' | 'admins' | 'players' | 'fans'>('all')
 const memberSearch = ref('')
 type PlayerSortKey = 'obp' | 'avg' | 'hr' | 'rbi' | 'r' | 'ab' | 'games'
@@ -102,19 +109,33 @@ const PLAYER_SORTS: { key: PlayerSortKey; label: string }[] = [
   { key: 'rbi', label: 'RBI' }, { key: 'r', label: 'Runs' }, { key: 'ab', label: 'At Bats' },
   { key: 'games', label: 'Games' }
 ]
-const EVENT_STATUSES: { key: 'all' | 'Upcoming' | 'Ongoing' | 'Completed'; label: string }[] = [
-  { key: 'all', label: 'All' }, { key: 'Upcoming', label: 'Upcoming' },
-  { key: 'Ongoing', label: 'Ongoing' }, { key: 'Completed', label: 'Completed' }
-]
+function eventYear(e: TeamEventItem): string {
+  const m = String(e.dateRangeLabel || '').match(/\b(20\d{2})\b/)
+  return m ? m[1] : ''
+}
+function eventState(e: TeamEventItem): string {
+  const parts = String(e.location || '').split(',').map((s) => s.trim()).filter(Boolean)
+  return parts.length > 1 ? parts[parts.length - 1] : ''
+}
+const eventYears = computed(() => [...new Set(events.value.map(eventYear).filter(Boolean))].sort().reverse())
+const eventTypes = computed(() => [...new Set(events.value.map((e) => e.eventType).filter(Boolean))] as string[])
+const eventAssocs = computed(() => [...new Set(events.value.map((e) => e.association).filter(Boolean))] as string[])
+const eventStates = computed(() => [...new Set(events.value.map(eventState).filter(Boolean))])
+
 const MEMBER_ROLES: { key: 'all' | 'admins' | 'players' | 'fans'; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'admins', label: 'Admins' },
   { key: 'players', label: 'Players' }, { key: 'fans', label: 'Fans' }
 ]
 
 const filteredEvents = computed(() =>
-  eventStatus.value === 'all'
-    ? events.value
-    : events.value.filter((e) => e.statusLabel === eventStatus.value)
+  events.value.filter((e) => {
+    if (filterYear.value !== 'all' && eventYear(e) !== filterYear.value) return false
+    if (filterType.value !== 'all' && e.eventType !== filterType.value) return false
+    if (filterAssoc.value !== 'all' && e.association !== filterAssoc.value) return false
+    if (filterState.value !== 'all' && eventState(e) !== filterState.value) return false
+    if (!showPast.value && e.statusLabel === 'Completed') return false
+    return true
+  })
 )
 
 const filteredMembers = computed(() => {
@@ -216,6 +237,12 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
       </div>
 
       <div class="hero-status">
+        <div class="team-detail__hero-actions">
+          <button type="button" class="td-hero-btn" @click="goToChat">
+            <AppIcon name="message" :size="14" /> Message Team
+          </button>
+          <button type="button" class="td-hero-btn" @click="goToChat">Settings</button>
+        </div>
         <div class="team-detail__record">
           <template v-if="loadingHeader">
             <span v-for="n in 3" :key="n" class="shimmer-block td-sk__tile" aria-hidden="true"></span>
@@ -256,15 +283,29 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 
       <!-- Events -->
       <template v-else-if="activeTab === 'events'">
-        <div v-if="events.length" class="td-filter">
+        <div v-if="events.length" class="td-filter td-filter--wrap">
+          <select v-model="filterYear" class="td-select" aria-label="Year">
+            <option value="all">Year</option>
+            <option v-for="y in eventYears" :key="y" :value="y">{{ y }}</option>
+          </select>
+          <select v-model="filterType" class="td-select" aria-label="Type">
+            <option value="all">Type</option>
+            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
+          </select>
+          <select v-model="filterAssoc" class="td-select" aria-label="Association">
+            <option value="all">Association</option>
+            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
+          </select>
+          <select v-model="filterState" class="td-select" aria-label="State">
+            <option value="all">State</option>
+            <option v-for="s in eventStates" :key="s" :value="s">{{ s }}</option>
+          </select>
           <button
-            v-for="s in EVENT_STATUSES"
-            :key="s.key"
             type="button"
             class="td-filter__chip"
-            :class="{ 'td-filter__chip--active': eventStatus === s.key }"
-            @click="eventStatus = s.key"
-          >{{ s.label }}</button>
+            :class="{ 'td-filter__chip--active': showPast }"
+            @click="showPast = !showPast"
+          >Past Events</button>
         </div>
         <ul v-if="filteredEvents.length" class="team-detail__events">
           <li v-for="ev in filteredEvents" :key="ev.id" class="td-event">
@@ -483,6 +524,37 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
   margin-bottom: 14px;
 }
 .td-filter--split { justify-content: space-between; }
+.td-filter--wrap { flex-wrap: wrap; }
+.td-select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+}
+.td-select:focus { border-color: var(--primary); }
+.team-detail__hero-actions { display: flex; gap: 8px; margin-bottom: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.td-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-divider);
+  background: var(--surface-card);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.td-hero-btn:hover { color: var(--primary); border-color: var(--border-accent-hover, var(--primary-light-2)); }
 .td-filter__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .td-filter__label { color: var(--secondary); font-size: 0.78rem; margin-right: 2px; }
 .td-filter__chip {
