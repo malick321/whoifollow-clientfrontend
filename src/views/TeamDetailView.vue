@@ -9,7 +9,7 @@
 // their own lean v2 endpoints on first activation.
 
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -34,7 +34,6 @@ const TABS: { key: TabKey; label: string }[] = [
 ]
 
 const route = useRoute()
-const router = useRouter()
 const teamId = computed(() => String(route.params.teamId ?? ''))
 
 const detail = ref<ChatTeamDetail | null>(null)
@@ -142,10 +141,6 @@ onMounted(async () => {
   void loadTab(activeTab.value)
 })
 
-function goBack() {
-  if (window.history.length > 1) router.back()
-  else router.push({ name: 'chat' })
-}
 </script>
 
 <template>
@@ -153,12 +148,7 @@ function goBack() {
     <!-- Header — reuses the finalized global `.hero` design system. -->
     <section class="hero team-detail__hero">
       <div class="hero__main">
-        <div class="hero-title-row">
-          <p class="eyebrow">Team Details</p>
-          <button type="button" class="team-detail__back" @click="goBack">
-            <AppIcon name="close" :size="14" /> Back
-          </button>
-        </div>
+        <p class="eyebrow">Team Details</p>
         <div class="team-heading">
           <template v-if="loadingHeader">
             <span class="shimmer-circle td-sk__avatar" aria-hidden="true"></span>

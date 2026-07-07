@@ -726,8 +726,10 @@ export async function fetchTeamDetail(teamId: string): Promise<ChatTeamDetail | 
     { headers: getHeaders() }
   )
   const env = await readJson<ApiTeamDetailResponse>(response)
-  const team = env?.data?.team
-  return team ? adaptTeamDetail(team) : null
+  // The endpoint returns the team fields FLAT under `data` (no `team` wrapper);
+  // tolerate both shapes so the header/stats populate.
+  const team = (env?.data as { team?: unknown })?.team ?? env?.data
+  return team ? adaptTeamDetail(team as Parameters<typeof adaptTeamDetail>[0]) : null
 }
 
 /** Patch one or more team settings toggles. Returns the reconciled settings. */
