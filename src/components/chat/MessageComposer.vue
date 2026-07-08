@@ -4,7 +4,7 @@ import AppIcon from '../AppIcon.vue'
 import { useChatStore } from '../../stores/chat'
 import type { ChatMessage } from '../../api/chat'
 import { formatFileSize, isAudioFile, isImageFile, isVideoFile } from './chat-format'
-import { prepareChatUploadFiles } from '../../lib/chat-media'
+import { prepareChatUploadFiles, type PreparedChatFile } from '../../lib/chat-media'
 import { pushToast } from '../../toast-center'
 
 const props = defineProps<{
@@ -25,10 +25,12 @@ type PendingFileKind = 'image' | 'video' | 'audio' | 'file'
 interface PendingFile {
   id: string
   file: File
+  thumbnailFile: File | null
   name: string
   type: string
   size: number
   previewUrl: string
+  thumbnailPreviewUrl: string | null
   kind: PendingFileKind
 }
 
@@ -111,6 +113,7 @@ async function send() {
       const files = [...pendingFiles.value]
       const payload = files.map((f) => ({
         file: f.file,
+        thumbnailFile: f.thumbnailFile,
         name: f.name,
         type: f.type || 'application/octet-stream',
         size: f.size
@@ -148,16 +151,21 @@ function pendingFileId(file: File, index: number): string {
   return `${Date.now()}-${index}-${file.name}-${file.size}`
 }
 
-function addPendingFiles(files: File[]) {
-  const next = files.map((file, index) => ({
-    id: pendingFileId(file, index),
-    file,
-    name: file.name,
-    type: file.type || 'application/octet-stream',
-    size: file.size,
-    previewUrl: URL.createObjectURL(file),
-    kind: pendingFileKind(file)
-  }))
+function addPendingFiles(files: PreparedChatFile[]) {
+  const next = files.map((item, index) => {
+    const file = item.file
+    return {
+      id: pendingFileId(file, index),
+      file,
+      thumbnailFile: item.thumbnail,
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      previewUrl: URL.createObjectURL(file),
+      thumbnailPreviewUrl: item.thumbnail ? URL.createObjectURL(item.thumbnail) : null,
+      kind: pendingFileKind(file)
+    }
+  })
   pendingFiles.value = [...pendingFiles.value, ...next]
 }
 
@@ -166,13 +174,19 @@ function revokePreview(url: string) {
 }
 
 function clearPendingFiles() {
-  pendingFiles.value.forEach((file) => revokePreview(file.previewUrl))
+  pendingFiles.value.forEach((file) => {
+    revokePreview(file.previewUrl)
+    if (file.thumbnailPreviewUrl) revokePreview(file.thumbnailPreviewUrl)
+  })
   pendingFiles.value = []
 }
 
 function removePendingFile(id: string) {
   const file = pendingFiles.value.find((item) => item.id === id)
-  if (file) revokePreview(file.previewUrl)
+  if (file) {
+    revokePreview(file.previewUrl)
+    if (file.thumbnailPreviewUrl) revokePreview(file.thumbnailPreviewUrl)
+  }
   pendingFiles.value = pendingFiles.value.filter((item) => item.id !== id)
 }
 
@@ -186,7 +200,7 @@ async function onFilesPicked(e: Event) {
     const existingBytes = pendingFiles.value.reduce((sum, file) => sum + file.size, 0)
     const prepared = await prepareChatUploadFiles(files, pendingFiles.value.length, existingBytes)
     if (prepared.accepted.length) {
-      addPendingFiles(prepared.accepted.map((item) => item.file))
+      addPendingFiles(prepared.accepted)
     }
     if (prepared.rejected.length) {
       pushToast({

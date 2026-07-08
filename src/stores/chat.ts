@@ -129,6 +129,7 @@ export interface TypingState {
 
 interface ChatUploadFile {
   file: File
+  thumbnailFile?: File | null
   name: string
   type: string
   size: number
@@ -590,7 +591,7 @@ export const useChatStore = defineStore('chat', {
           type: f.type,
           url: createLocalFileUrl(f.file),
           size: f.size,
-          thumbnailUrl: null
+          thumbnailUrl: f.thumbnailFile ? createLocalFileUrl(f.thumbnailFile) : null
         })),
         parentMessage: parentPreview(parent),
         isPinned: false,
@@ -603,7 +604,18 @@ export const useChatStore = defineStore('chat', {
       this.appendMessage(id, temp)
 
       void createChatUploadIntent(id, {
-        files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        files: files.map((f) => ({
+          name: f.name,
+          type: f.type,
+          size: f.size,
+          thumbnail: f.thumbnailFile
+            ? {
+                name: f.thumbnailFile.name,
+                type: f.thumbnailFile.type || 'image/jpeg',
+                size: f.thumbnailFile.size
+              }
+            : null
+        })),
         content,
         parentMessageId: parent?.id,
         clientId
@@ -614,11 +626,16 @@ export const useChatStore = defineStore('chat', {
           }
           for (let i = 0; i < intent.uploads.length; i += 1) {
             await putChatUpload(files[i].file, intent.uploads[i])
+            const thumbnailFile = files[i].thumbnailFile
+            const thumbnailUpload = intent.uploads[i].thumbnail
+            if (thumbnailFile && thumbnailUpload) {
+              await putChatUpload(thumbnailFile, thumbnailUpload)
+            }
           }
           const messages = await completeChatUpload(id, {
             uploadSessionId: intent.uploadSessionId,
             uploadToken: intent.uploadToken,
-            messageIds: intent.uploads.map((upload) => upload.messageId)
+            messageIds: intent.uploads.map((upload) => upload.messageId).filter(Boolean) as string[]
           })
           for (const message of messages) void this.onIncomingMessage(message)
           if (socket && socket.connected) {

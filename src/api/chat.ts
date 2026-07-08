@@ -349,10 +349,15 @@ export interface ChatUploadIntentInputFile {
   name: string
   type: string
   size: number
+  thumbnail?: {
+    name: string
+    type: string
+    size: number
+  } | null
 }
 
 export interface ChatUploadTarget {
-  messageId: string
+  messageId?: string
   name: string
   type: string
   size: number
@@ -360,6 +365,7 @@ export interface ChatUploadTarget {
   uploadUrl: string
   headers: Record<string, string>
   expiresAt: string
+  thumbnail?: ChatUploadTarget | null
 }
 
 export interface ChatUploadIntent {

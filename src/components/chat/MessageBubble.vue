@@ -212,6 +212,7 @@ onBeforeUnmount(() => {
               <video
                 class="bubble__video"
                 :src="file.url"
+                :poster="file.thumbnailUrl || undefined"
                 controls
                 playsinline
                 preload="metadata"

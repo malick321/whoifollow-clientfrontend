@@ -5,17 +5,22 @@ export const CHAT_MAX_IMAGE_BYTES = 8 * MB
 export const CHAT_MAX_VIDEO_BYTES = 150 * MB
 export const CHAT_MAX_AUDIO_BYTES = 50 * MB
 export const CHAT_MAX_FILE_BYTES = 25 * MB
+export const CHAT_MAX_THUMBNAIL_BYTES = 1 * MB
 export const CHAT_MAX_BATCH_BYTES = 200 * MB
 
 const IMAGE_MAX_EDGE = 1600
 const IMAGE_OPTIMIZE_THRESHOLD_BYTES = 1.5 * MB
 const IMAGE_QUALITY = 0.82
+const THUMBNAIL_MAX_EDGE = 480
+const THUMBNAIL_QUALITY = 0.72
+const VIDEO_THUMBNAIL_TIMEOUT_MS = 5000
 
 export interface PreparedChatFile {
   file: File
   originalName: string
   originalSize: number
   wasOptimized: boolean
+  thumbnail: File | null
 }
 
 export interface RejectedChatFile {
@@ -84,21 +89,26 @@ export function formatBytes(bytes: number): string {
 }
 
 async function prepareOneFile(file: File): Promise<PreparedChatFile> {
+  let preparedFile = file
+  let wasOptimized = false
+
   if (!isCompressibleImage(file)) {
-    return { file, originalName: file.name, originalSize: file.size, wasOptimized: false }
+    const thumbnail = await createMediaThumbnail(preparedFile)
+    return { file: preparedFile, originalName: file.name, originalSize: file.size, wasOptimized, thumbnail }
   }
 
   try {
     const optimized = await optimizeImage(file)
-    return {
-      file: optimized ?? file,
-      originalName: file.name,
-      originalSize: file.size,
-      wasOptimized: !!optimized && optimized.size < file.size
+    if (optimized && optimized.size < file.size) {
+      preparedFile = optimized
+      wasOptimized = true
     }
   } catch {
-    return { file, originalName: file.name, originalSize: file.size, wasOptimized: false }
+    preparedFile = file
   }
+
+  const thumbnail = await createMediaThumbnail(preparedFile)
+  return { file: preparedFile, originalName: file.name, originalSize: file.size, wasOptimized, thumbnail }
 }
 
 function maxBytesForFile(file: File): number {
@@ -160,6 +170,151 @@ async function optimizeImage(file: File): Promise<File | null> {
     type: targetType,
     lastModified: Date.now()
   })
+}
+
+async function createMediaThumbnail(file: File): Promise<File | null> {
+  try {
+    if (isThumbnailableImage(file)) return createImageThumbnail(file)
+    if (isThumbnailableVideo(file)) return createVideoThumbnail(file)
+  } catch {
+    return null
+  }
+  return null
+}
+
+function isThumbnailableImage(file: File): boolean {
+  const type = file.type.toLowerCase()
+  const name = file.name.toLowerCase()
+  if (!(type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|heic|heif)$/i.test(name))) {
+    return false
+  }
+  return type !== 'image/svg+xml' && !/\.svg$/i.test(name)
+}
+
+function isThumbnailableVideo(file: File): boolean {
+  const type = file.type.toLowerCase()
+  const name = file.name.toLowerCase()
+  return type.startsWith('video/') || /\.(mp4|m4v|mov|webm|ogv)$/i.test(name)
+}
+
+async function createImageThumbnail(file: File): Promise<File | null> {
+  const image = await loadImage(file)
+  const naturalWidth = image.naturalWidth || image.width
+  const naturalHeight = image.naturalHeight || image.height
+  if (!naturalWidth || !naturalHeight) return null
+  const canvas = drawScaledToCanvas(image, naturalWidth, naturalHeight, THUMBNAIL_MAX_EDGE)
+  return canvasToThumbnailFile(canvas, file.name)
+}
+
+async function createVideoThumbnail(file: File): Promise<File | null> {
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || !URL.createObjectURL) {
+    return null
+  }
+
+  const url = URL.createObjectURL(file)
+  const video = document.createElement('video')
+  video.preload = 'metadata'
+  video.muted = true
+  video.playsInline = true
+
+  return new Promise((resolve) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      video.removeAttribute('src')
+      video.load()
+      URL.revokeObjectURL(url)
+    }
+
+    const finish = async () => {
+      if (settled) return
+      settled = true
+      try {
+        const width = video.videoWidth
+        const height = video.videoHeight
+        if (!width || !height) {
+          resolve(null)
+        } else {
+          const canvas = drawScaledToCanvas(video, width, height, THUMBNAIL_MAX_EDGE)
+          resolve(await canvasToThumbnailFile(canvas, file.name))
+        }
+      } catch {
+        resolve(null)
+      } finally {
+        cleanup()
+      }
+    }
+
+    const fail = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(null)
+    }
+
+    video.onloadedmetadata = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : 0
+      const seekTo = duration > 1 ? Math.min(1, duration / 4) : 0
+      if (seekTo > 0) {
+        try {
+          video.currentTime = seekTo
+        } catch {
+          void finish()
+        }
+      } else {
+        void finish()
+      }
+    }
+    video.onseeked = () => void finish()
+    video.onloadeddata = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 1) void finish()
+    }
+    video.onerror = fail
+    timer = setTimeout(fail, VIDEO_THUMBNAIL_TIMEOUT_MS)
+    video.src = url
+    video.load()
+  })
+}
+
+function drawScaledToCanvas(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  maxEdge: number
+): HTMLCanvasElement {
+  const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight))
+  const width = Math.max(1, Math.round(sourceWidth * scale))
+  const height = Math.max(1, Math.round(sourceHeight * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, width, height)
+  ctx.drawImage(source, 0, 0, width, height)
+  return canvas
+}
+
+async function canvasToThumbnailFile(canvas: HTMLCanvasElement, name: string): Promise<File | null> {
+  const candidates = [
+    { type: 'image/webp', extension: 'webp' },
+    { type: 'image/jpeg', extension: 'jpg' }
+  ]
+
+  for (const candidate of candidates) {
+    const blob = await canvasToBlob(canvas, candidate.type, THUMBNAIL_QUALITY)
+    if (blob && blob.size > 0 && blob.size <= CHAT_MAX_THUMBNAIL_BYTES) {
+      return new File([blob], replaceExtension(name, candidate.extension), {
+        type: candidate.type,
+        lastModified: Date.now()
+      })
+    }
+  }
+
+  return null
 }
 
 function loadImage(file: File): Promise<HTMLImageElement> {
