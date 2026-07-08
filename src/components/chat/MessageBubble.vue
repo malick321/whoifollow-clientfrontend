@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import AppIcon from '../AppIcon.vue'
 import TeamAvatar from '../TeamAvatar.vue'
 import { getAuthUserChatId } from '../../auth-session'
-import { formatTime, formatFileSize, isImageFile } from './chat-format'
+import { formatTime, formatFileSize, isAudioFile, isImageFile, isVideoFile } from './chat-format'
 import type { ChatMessage } from '../../api/chat'
 
 const props = defineProps<{
@@ -205,6 +205,51 @@ onBeforeUnmount(() => {
             >
               <img :src="file.thumbnailUrl || file.url" :alt="file.name" />
             </a>
+            <div
+              v-else-if="isVideoFile(file.type, file.name) && file.url"
+              class="bubble__media bubble__media--video"
+            >
+              <video
+                class="bubble__video"
+                :src="file.url"
+                controls
+                playsinline
+                preload="metadata"
+              />
+              <a
+                v-if="file.name"
+                class="bubble__media-name"
+                :href="file.url"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ file.name }}
+              </a>
+            </div>
+            <div
+              v-else-if="isAudioFile(file.type, file.name) && file.url"
+              class="bubble__audio"
+            >
+              <span class="bubble__file-icon"><AppIcon name="document" :size="20" /></span>
+              <span class="bubble__file-meta">
+                <a
+                  v-if="file.name"
+                  class="bubble__file-name bubble__file-name--link"
+                  :href="file.url"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  {{ file.name }}
+                </a>
+                <span v-if="file.size" class="bubble__file-size">{{ formatFileSize(file.size) }}</span>
+                <audio
+                  class="bubble__audio-player"
+                  :src="file.url"
+                  controls
+                  preload="metadata"
+                />
+              </span>
+            </div>
             <a
               v-else
               class="bubble__file-chip"
@@ -401,6 +446,57 @@ html.dark-mode .bubble__reply {
   object-fit: cover;
 }
 
+.bubble__media {
+  max-width: 280px;
+}
+
+.bubble__video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  background: #000;
+}
+
+.bubble__media-name {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--text, #2e3137);
+  font-size: 0.76rem;
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bubble__media-name:hover {
+  text-decoration: underline;
+}
+
+.bubble__audio {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 320px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  color: inherit;
+}
+
+html.dark-mode .bubble__audio {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.bubble__audio-player {
+  display: block;
+  width: 260px;
+  max-width: 100%;
+  margin-top: 5px;
+}
+
 .bubble__file-chip {
   display: flex;
   align-items: center;
@@ -434,6 +530,14 @@ html.dark-mode .bubble__file-chip {
   color: var(--text, #2e3137);
   font-size: 0.82rem;
   font-weight: 500;
+}
+
+.bubble__file-name--link {
+  text-decoration: none;
+}
+
+.bubble__file-name--link:hover {
+  text-decoration: underline;
 }
 
 .bubble__file-size {
@@ -601,5 +705,19 @@ html.dark-mode .bubble__file-chip {
 .bubble__confirm-btn--ghost {
   background: transparent;
   color: var(--text-light, #787f8d);
+}
+
+@media (max-width: 520px) {
+  .bubble {
+    max-width: calc(100% - 44px);
+  }
+
+  .bubble__media {
+    max-width: 230px;
+  }
+
+  .bubble__audio-player {
+    width: 220px;
+  }
 }
 </style>

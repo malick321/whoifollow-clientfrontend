@@ -7,7 +7,7 @@
 //
 // Realtime event reference: chat-microservice/src/chat.gateway.ts.
 //   Client emits: join-conversation, leave-conversation, send-message,
-//     send-message-with-files, mark-delivered, bulk-mark-delivered, mark-read,
+//     broadcast-rest-messages, mark-delivered, bulk-mark-delivered, mark-read,
 //     mark-read-batch, typing, delete-message, get-online-users.
 //   Server emits: message.sent ({message}), message.delivered, message.read,
 //     message.read.batch, typing, user.status, online-users,
@@ -31,6 +31,7 @@ import {
   fetchConversations,
   fetchMessages,
   getOrCreateIndividualConversation,
+  sendFilesRest,
   sendMessageRest,
   togglePin as togglePinRest,
   type ChatConversation,
@@ -86,9 +87,29 @@ function parentPreview(parent?: ChatMessage | null): ChatMessage['parentMessage'
   }
 }
 
+function createLocalFileUrl(file: File): string {
+  if (typeof URL === 'undefined' || !URL.createObjectURL) return ''
+  return URL.createObjectURL(file)
+}
+
+function revokeLocalFileUrls(message: ChatMessage) {
+  if (typeof URL === 'undefined' || !URL.revokeObjectURL) return
+  for (const file of message.files) {
+    if (file.url?.startsWith('blob:')) URL.revokeObjectURL(file.url)
+    if (file.thumbnailUrl?.startsWith('blob:')) URL.revokeObjectURL(file.thumbnailUrl)
+  }
+}
+
 export interface TypingState {
   userChatId: string
   userName: string
+}
+
+interface ChatUploadFile {
+  file: File
+  name: string
+  type: string
+  size: number
 }
 
 interface ChatStoreState {
@@ -526,7 +547,7 @@ export const useChatStore = defineStore('chat', {
 
     sendFiles(
       id: string,
-      files: Array<{ base64: string; name: string; type: string; size: number }>,
+      files: ChatUploadFile[],
       content = '',
       parent?: ChatMessage | null
     ): string {
@@ -545,7 +566,7 @@ export const useChatStore = defineStore('chat', {
         files: files.map((f) => ({
           name: f.name,
           type: f.type,
-          url: '',
+          url: createLocalFileUrl(f.file),
           size: f.size,
           thumbnailUrl: null
         })),
@@ -558,21 +579,35 @@ export const useChatStore = defineStore('chat', {
         readBy: []
       }
       this.appendMessage(id, temp)
-      void upsertCachedMessage(temp)
 
-      if (socket && socket.connected) {
-        socket.emit('send-message-with-files', {
-          conversation_id: id,
-          content,
-          parent_message_id: parent?.id,
-          files,
-          clientId
+      void sendFilesRest(id, {
+        files: files.map((f) => f.file),
+        content,
+        parentMessageId: parent?.id,
+        clientId
+      })
+        .then((messages) => {
+          for (const message of messages) void this.onIncomingMessage(message)
+          if (socket && socket.connected) {
+            const messageIds = messages.map((message) => message.id).filter(Boolean)
+            if (messageIds.length) {
+              socket.emit('broadcast-rest-messages', {
+                conversation_id: id,
+                message_ids: messageIds
+              })
+            }
+          }
         })
-      } else {
-        console.warn(
-          '[chat] sendFiles: socket offline; file upload requires the socket/REST multipart path'
-        )
-      }
+        .catch((err) => {
+          console.warn('[chat] sendFiles REST upload failed', err)
+          const list = this.messagesByConversation[id] ?? []
+          const idx = list.findIndex((m) => m.id === clientId)
+          if (idx >= 0) {
+            revokeLocalFileUrls(list[idx])
+            list.splice(idx, 1)
+          }
+          void removeCachedMessage(clientId)
+        })
       return clientId
     },
 
@@ -708,6 +743,7 @@ export const useChatStore = defineStore('chat', {
         if (!msg.parentMessage && prevTemp.parentMessage) {
           msg = { ...msg, parentMessage: prevTemp.parentMessage }
         }
+        if (prevTemp.id.startsWith('tmp_')) revokeLocalFileUrls(prevTemp)
         list.splice(idx, 1, msg)
         if (prevTemp.id !== msg.id) void removeCachedMessage(prevTemp.id)
       } else {
@@ -898,6 +934,7 @@ export const useChatStore = defineStore('chat', {
         }
         if (existing) {
           const idx = current.indexOf(existing)
+          if (existing.id.startsWith('tmp_')) revokeLocalFileUrls(existing)
           if (idx >= 0) current.splice(idx, 1, msg)
           if (existing.id !== msg.id) void removeCachedMessage(existing.id)
         } else {
@@ -925,6 +962,7 @@ export const useChatStore = defineStore('chat', {
         // real twin.
         const age = now - new Date(m.createdAt).getTime()
         if (age > 10_000 && realKeys.has(`${m.content}|${m.hasFile ? 1 : 0}`)) {
+          revokeLocalFileUrls(m)
           void removeCachedMessage(m.id)
           return false
         }

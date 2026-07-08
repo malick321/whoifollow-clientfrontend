@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import AppIcon from '../AppIcon.vue'
 import { useChatStore } from '../../stores/chat'
 import type { ChatMessage } from '../../api/chat'
+import { formatFileSize, isAudioFile, isImageFile, isVideoFile } from './chat-format'
 
 const props = defineProps<{
   conversationId: string
@@ -17,13 +18,28 @@ const emit = defineEmits<{
 
 const store = useChatStore()
 
+type PendingFileKind = 'image' | 'video' | 'audio' | 'file'
+
+interface PendingFile {
+  id: string
+  file: File
+  name: string
+  type: string
+  size: number
+  previewUrl: string
+  kind: PendingFileKind
+}
+
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const pendingFiles = ref<PendingFile[]>([])
+const sending = ref(false)
 
 const placeholder = computed(() =>
   props.recipientName ? `Type your message for ${props.recipientName}` : 'Type your message'
 )
+const canSend = computed(() => text.value.trim().length > 0 || pendingFiles.value.length > 0)
 
 // ── Typing emit (debounced start, idle stop) ─────────────────────────────
 let typingActive = false
@@ -66,6 +82,7 @@ watch(
   () => {
     stopTyping()
     text.value = ''
+    clearPendingFiles()
   }
 )
 
@@ -77,58 +94,98 @@ function onInput() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    send()
+    void send()
   }
 }
 
-function send() {
+async function send() {
   const content = text.value.trim()
-  if (!content) return
-  store.sendMessage(props.conversationId, content, props.replyTo)
-  text.value = ''
-  stopTyping()
-  emit('sent')
-  void nextTick(autoGrow)
+  if (sending.value || (!content && !pendingFiles.value.length)) return
+
+  sending.value = true
+  try {
+    if (pendingFiles.value.length) {
+      const files = [...pendingFiles.value]
+      const payload = files.map((f) => ({
+        file: f.file,
+        name: f.name,
+        type: f.type || 'application/octet-stream',
+        size: f.size
+      }))
+      store.sendFiles(props.conversationId, payload, content, props.replyTo)
+      clearPendingFiles()
+    } else {
+      store.sendMessage(props.conversationId, content, props.replyTo)
+    }
+    text.value = ''
+    stopTyping()
+    emit('sent')
+    void nextTick(autoGrow)
+  } catch (error) {
+    console.error('[chat] Failed to prepare attachment upload', error)
+  } finally {
+    sending.value = false
+  }
 }
 
 function pickFiles() {
   fileInput.value?.click()
 }
 
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      // Strip the `data:<mime>;base64,` prefix — the gateway expects raw base64.
-      const comma = result.indexOf(',')
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
+function pendingFileKind(file: File): PendingFileKind {
+  if (isImageFile(file.type, file.name)) return 'image'
+  if (isVideoFile(file.type, file.name)) return 'video'
+  if (isAudioFile(file.type, file.name)) return 'audio'
+  return 'file'
 }
 
-async function onFilesPicked(e: Event) {
+function pendingFileId(file: File, index: number): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `${Date.now()}-${index}-${file.name}-${file.size}`
+}
+
+function addPendingFiles(files: File[]) {
+  const next = files.map((file, index) => ({
+    id: pendingFileId(file, index),
+    file,
+    name: file.name,
+    type: file.type || 'application/octet-stream',
+    size: file.size,
+    previewUrl: URL.createObjectURL(file),
+    kind: pendingFileKind(file)
+  }))
+  pendingFiles.value = [...pendingFiles.value, ...next]
+}
+
+function revokePreview(url: string) {
+  URL.revokeObjectURL(url)
+}
+
+function clearPendingFiles() {
+  pendingFiles.value.forEach((file) => revokePreview(file.previewUrl))
+  pendingFiles.value = []
+}
+
+function removePendingFile(id: string) {
+  const file = pendingFiles.value.find((item) => item.id === id)
+  if (file) revokePreview(file.previewUrl)
+  pendingFiles.value = pendingFiles.value.filter((item) => item.id !== id)
+}
+
+function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement
   const files = input.files ? Array.from(input.files) : []
   if (!files.length) return
 
-  const payload = await Promise.all(
-    files.map(async (f) => ({
-      base64: await readFileAsBase64(f),
-      name: f.name,
-      type: f.type || 'application/octet-stream',
-      size: f.size
-    }))
-  )
-
-  store.sendFiles(props.conversationId, payload, text.value.trim(), props.replyTo)
-  text.value = ''
-  stopTyping()
-  emit('sent')
+  addPendingFiles(files)
   input.value = ''
+  void nextTick(() => textarea.value?.focus())
 }
+
+onBeforeUnmount(() => {
+  stopTyping()
+  clearPendingFiles()
+})
 </script>
 
 <template>
@@ -148,6 +205,47 @@ async function onFilesPicked(e: Event) {
       >
         <AppIcon name="close" :size="16" />
       </button>
+    </div>
+
+    <div v-if="pendingFiles.length" class="composer__attachments" aria-label="Selected attachments">
+      <article
+        v-for="file in pendingFiles"
+        :key="file.id"
+        class="composer__attachment"
+        :class="`composer__attachment--${file.kind}`"
+      >
+        <div class="composer__attachment-preview">
+          <img v-if="file.kind === 'image'" :src="file.previewUrl" :alt="file.name" />
+          <video
+            v-else-if="file.kind === 'video'"
+            :src="file.previewUrl"
+            muted
+            playsinline
+            preload="metadata"
+          />
+          <audio
+            v-else-if="file.kind === 'audio'"
+            class="composer__attachment-audio"
+            :src="file.previewUrl"
+            controls
+            preload="metadata"
+          />
+          <AppIcon v-else name="document" :size="22" />
+        </div>
+        <span class="composer__attachment-meta">
+          <span class="composer__attachment-name">{{ file.name }}</span>
+          <span v-if="file.size" class="composer__attachment-size">{{ formatFileSize(file.size) }}</span>
+        </span>
+        <button
+          type="button"
+          class="composer__attachment-remove"
+          :aria-label="`Remove ${file.name}`"
+          :disabled="sending"
+          @click="removePendingFile(file.id)"
+        >
+          <AppIcon name="close" :size="14" />
+        </button>
+      </article>
     </div>
 
     <div class="composer__bar">
@@ -182,7 +280,7 @@ async function onFilesPicked(e: Event) {
       <button
         type="button"
         class="composer__send"
-        :disabled="!text.trim()"
+        :disabled="sending || !canSend"
         aria-label="Send message"
         title="Send"
         @click="send"
@@ -242,6 +340,119 @@ async function onFilesPicked(e: Event) {
   background: transparent;
   color: var(--text-light, #787f8d);
   cursor: pointer;
+}
+
+.composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.composer__attachment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 260px;
+  padding: 6px 30px 6px 6px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 8px;
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+}
+
+.composer__attachment--audio {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 320px;
+  padding: 8px 30px 8px 8px;
+}
+
+.composer__attachment-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--secondary, #2f5f98);
+}
+
+html.dark-mode .composer__attachment-preview {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.composer__attachment-preview img,
+.composer__attachment-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer__attachment--audio .composer__attachment-preview {
+  order: 2;
+  width: 100%;
+  height: 38px;
+  justify-content: flex-start;
+  background: transparent;
+}
+
+.composer__attachment-audio {
+  width: 100%;
+  max-width: 100%;
+}
+
+.composer__attachment-meta {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.composer__attachment--audio .composer__attachment-meta {
+  order: 1;
+}
+
+.composer__attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #2e3137);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.composer__attachment-size {
+  color: var(--text-light, #787f8d);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.composer__attachment-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
+  color: var(--text-light, #787f8d);
+  box-shadow: var(--shadow-soft, 0 6px 16px rgba(36, 60, 91, 0.05));
+  cursor: pointer;
+}
+
+.composer__attachment-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .composer__bar {
@@ -309,5 +520,12 @@ async function onFilesPicked(e: Event) {
 .composer__send:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+@media (max-width: 520px) {
+  .composer__attachment,
+  .composer__attachment--audio {
+    max-width: 100%;
+  }
 }
 </style>

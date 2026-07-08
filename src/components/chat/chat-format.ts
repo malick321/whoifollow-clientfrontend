@@ -77,3 +77,17 @@ export function isImageFile(type: string | null | undefined, name?: string | nul
   const n = (name ?? '').toLowerCase()
   return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/.test(n)
 }
+
+/** True when a file's MIME type / extension reads as playable audio. */
+export function isAudioFile(type: string | null | undefined, name?: string | null): boolean {
+  if (type && type.toLowerCase().startsWith('audio/')) return true
+  const n = (name ?? '').toLowerCase()
+  return /\.(mp3|m4a|aac|wav|ogg|oga|webm|flac)$/.test(n)
+}
+
+/** True when a file's MIME type / extension reads as playable video. */
+export function isVideoFile(type: string | null | undefined, name?: string | null): boolean {
+  if (type && type.toLowerCase().startsWith('video/')) return true
+  const n = (name ?? '').toLowerCase()
+  return /\.(mp4|m4v|mov|webm|ogv|avi|mkv)$/.test(n)
+}

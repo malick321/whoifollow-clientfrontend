@@ -313,6 +313,36 @@ export async function sendMessageRest(
   return rows.map(adaptMessage)
 }
 
+// ── 6. Send files (REST multipart) ───────────────────────────────────────────
+
+export async function sendFilesRest(
+  id: string,
+  body: { files: File[]; content?: string; parentMessageId?: string; clientId?: string }
+): Promise<ChatMessage[]> {
+  const form = new FormData()
+  if (body.content !== undefined) form.append('content', body.content)
+  if (body.parentMessageId) form.append('parentMessageId', body.parentMessageId)
+  if (body.clientId) form.append('clientId', body.clientId)
+  for (const file of body.files) {
+    form.append('files[]', file, file.name)
+  }
+
+  const response = await fetch(
+    buildV2ApiUrl(`/chat/conversations/${encodeURIComponent(id)}/messages/with-files`),
+    {
+      method: 'POST',
+      headers: getHeaders(),
+      body: form
+    }
+  )
+  const env = await readJson<ApiMessageResponse>(response)
+  if (!response.ok) {
+    throw new Error(env?.responseStatus?.message || `Failed to upload files (${response.status})`)
+  }
+  const rows = env?.data?.messages ?? (env?.data?.message ? [env.data.message] : [])
+  return rows.map(adaptMessage)
+}
+
 // ── 7. Receipts ───────────────────────────────────────────────────────────────
 
 export async function markDelivered(messageId: string, deliveredAt?: string): Promise<number> {
