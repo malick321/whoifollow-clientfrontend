@@ -2,14 +2,24 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   deleteOpinionPost,
+  fetchOpinionMe,
   fetchOpinionPosts,
   fetchOpinionSpecialists,
   toggleOpinionPostLike,
   updateOpinionPost,
   type OpinionComment,
+  type OpinionMe,
   type OpinionPost
 } from '../api/opinions'
-import { authUserName } from '../auth-session'
+import {
+  authEmail,
+  authUserAvatarUrl,
+  authUserName,
+  clearAuthSession,
+  isAuthenticated,
+  setChatIdentity
+} from '../auth-session'
+import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import CommentList from '../components/opinions/CommentList.vue'
@@ -22,8 +32,12 @@ import { pushToast } from '../toast-center'
 const FEED_LIMIT = 8
 const SPECIALIST_LIMIT = 5
 
+const route = useRoute()
+const router = useRouter()
+
 const posts = ref<OpinionPost[]>([])
 const specialists = ref<OpinionPost[]>([])
+const currentUser = ref<OpinionMe['user'] | null>(null)
 const nextCursor = ref<string | null>(null)
 const specialistCursor = ref<string | null>(null)
 const loading = ref(true)
@@ -43,7 +57,40 @@ let lastNewerCheck = 0
 let observer: IntersectionObserver | null = null
 let topObserver: IntersectionObserver | null = null
 
-const currentUserName = computed(() => authUserName.value || 'there')
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0]?.trim() ?? ''
+  if (!local) return ''
+  return local
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b[a-z]/g, (char) => char.toUpperCase())
+}
+
+const currentUserName = computed(
+  () => {
+    const apiName = currentUser.value?.name?.trim()
+    if (apiName && apiName !== 'Unknown user') return apiName
+    return authUserName.value || nameFromEmail(authEmail.value) || 'WIF User'
+  }
+)
+const currentUserAvatarUrl = computed(
+  () => currentUser.value?.avatarUrl || authUserAvatarUrl.value || null
+)
+const canPostAsSpecialist = computed(() => !!currentUser.value?.isSpecialist)
+
+function redirectToLogin() {
+  void router.replace({ name: 'login', query: { redirect: route.fullPath } })
+}
+
+function isUnauthorized(error: unknown): boolean {
+  return (error as { code?: number } | null)?.code === 401
+}
+
+function handleAuthError(error: unknown): boolean {
+  if (!isUnauthorized(error)) return false
+  clearAuthSession()
+  redirectToLogin()
+  return true
+}
 
 function dedupePosts(items: OpinionPost[]): OpinionPost[] {
   const seen = new Set<string>()
@@ -59,6 +106,19 @@ function setBusy(target: typeof likeBusyIds | typeof mutationBusyIds, id: string
   if (busy) next.add(id)
   else next.delete(id)
   target.value = next
+}
+
+async function loadCurrentUser() {
+  try {
+    const me = await fetchOpinionMe()
+    currentUser.value = me?.user ?? null
+    if (me?.user.userChatId) {
+      setChatIdentity(me.user.userChatId, me.user.name, me.user.avatarUrl)
+    }
+  } catch (error) {
+    if (handleAuthError(error)) return
+    currentUser.value = null
+  }
 }
 
 function updatePostEverywhere(postId: string, updater: (post: OpinionPost) => OpinionPost) {
@@ -91,6 +151,7 @@ async function loadPosts(reset = false) {
     posts.value = reset ? page.posts : dedupePosts([...posts.value, ...page.posts])
     nextCursor.value = page.nextCursor
   } catch (error) {
+    if (handleAuthError(error)) return
     if (reset) posts.value = []
     pushToast({
       tone: 'warning',
@@ -115,6 +176,7 @@ async function loadSpecialists(reset = false) {
     specialists.value = reset ? page.posts : dedupePosts([...specialists.value, ...page.posts])
     specialistCursor.value = page.nextCursor
   } catch (error) {
+    if (handleAuthError(error)) return
     if (reset) specialists.value = []
     pushToast({
       tone: 'warning',
@@ -154,8 +216,9 @@ async function loadNewer() {
     const existing = new Set(posts.value.map((p) => p.id))
     const fresh = page.posts.filter((p) => !existing.has(p.id))
     if (fresh.length) posts.value = dedupePosts([...fresh, ...posts.value])
-  } catch {
-    // Background refresh — stay quiet on failure.
+  } catch (error) {
+    if (handleAuthError(error)) return
+    // Background refresh - stay quiet on failure.
   } finally {
     loadingNewer.value = false
   }
@@ -171,6 +234,10 @@ function setupTopObserver() {
 }
 
 function onPostCreated(post: OpinionPost) {
+  if (post.isSpecialist) {
+    specialists.value = dedupePosts([post, ...specialists.value])
+    return
+  }
   posts.value = dedupePosts([post, ...posts.value])
 }
 
@@ -264,6 +331,12 @@ function onCommentCreated(postId: string, _comment: OpinionComment) {
 }
 
 onMounted(async () => {
+  if (!isAuthenticated.value) {
+    redirectToLogin()
+    return
+  }
+  await loadCurrentUser()
+  if (!isAuthenticated.value) return
   await Promise.all([loadPosts(true), loadSpecialists(true)])
   await nextTick()
   setupObserver()
@@ -282,6 +355,10 @@ watch(nextCursor, async () => {
   await nextTick()
   setupObserver()
 })
+
+watch(isAuthenticated, (authenticated) => {
+  if (!authenticated) redirectToLogin()
+})
 </script>
 
 <template>
@@ -290,7 +367,7 @@ watch(nextCursor, async () => {
       <section class="opinions-profile">
         <div class="opinions-profile__cover"></div>
         <div class="opinions-profile__body">
-          <TeamAvatar :name="currentUserName" size="lg" />
+          <TeamAvatar :name="currentUserName" :image-url="currentUserAvatarUrl ?? undefined" size="lg" />
           <h2>{{ currentUserName }}</h2>
           <p>Sharing opinions with the community</p>
         </div>
@@ -316,7 +393,12 @@ watch(nextCursor, async () => {
         </div>
       </header>
 
-      <PostComposer :current-user-name="currentUserName" @created="onPostCreated" />
+      <PostComposer
+        :current-user-name="currentUserName"
+        :current-user-avatar-url="currentUserAvatarUrl"
+        :can-post-as-specialist="canPostAsSpecialist"
+        @created="onPostCreated"
+      />
 
       <!-- Scrolling back to the top auto-loads newer posts (no refresh button). -->
       <div ref="topSentinel" class="opinions-feed__top-sentinel" aria-hidden="true"></div>
@@ -361,6 +443,7 @@ watch(nextCursor, async () => {
             v-if="commentsOpen(post.id)"
             :post-id="post.id"
             :current-user-name="currentUserName"
+            :current-user-avatar-url="currentUserAvatarUrl"
             @created="onCommentCreated(post.id, $event)"
           />
         </PostCard>

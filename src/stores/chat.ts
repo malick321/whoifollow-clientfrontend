@@ -28,7 +28,6 @@ import {
   bulkMarkDelivered as bulkMarkDeliveredRest,
   deleteMessageRest,
   fetchConversation,
-  fetchMe,
   fetchConversations,
   fetchMessages,
   getOrCreateIndividualConversation,
@@ -38,6 +37,7 @@ import {
   type ChatMessage,
   type ChatMessageStatus
 } from '../api/chat'
+import { fetchCurrentUser } from '../api/me'
 import {
   cacheConversations,
   cacheMessages,
@@ -56,8 +56,12 @@ const CACHE_RENDER_LIMIT = 50
 function resolveSocketUrl(): string {
   const fromEnv = import.meta.env.VITE_CHAT_SOCKET_URL as string | undefined
   if (fromEnv && fromEnv.trim()) return fromEnv.trim()
-  // Default mirrors chat-microservice/src/main.ts (PORT || 3000).
-  return 'http://localhost:3000'
+  // Dev builds default to a local chat-microservice (PORT || 3000); production
+  // builds default to the live public socket server — the same host the legacy
+  // frontend uses (VUE_APP_NESTJS_URL || 'https://socket.whoifollow.tech').
+  // Either default is overridable via VITE_CHAT_SOCKET_URL at build time.
+  if (import.meta.env.DEV) return 'http://localhost:3000'
+  return 'https://socket.whoifollow.tech'
 }
 
 function roomFor(conversationId: string): string {
@@ -234,9 +238,9 @@ export const useChatStore = defineStore('chat', {
       // message alignment + unblocks the socket handshake.
       if (!userChatId) {
         try {
-          const me = await fetchMe()
+          const me = await fetchCurrentUser()
           if (me?.userChatId) {
-            setChatIdentity(me.userChatId, me.name)
+            setChatIdentity(me.userChatId, me.name, me.avatarUrl)
             userChatId = me.userChatId
           }
         } catch (err) {
@@ -676,17 +680,21 @@ export const useChatStore = defineStore('chat', {
       if (msg.clientId) idx = list.findIndex((m) => m.clientId === msg.clientId)
       if (idx < 0) idx = list.findIndex((m) => m.id === msg.id)
 
-      // Fallback reconcile when clientId didn't round-trip: the sender receives
-      // its own message via BOTH the room's `message.sent` broadcast and the
-      // direct `message-sent-success` ack. Without a clientId match the
-      // optimistic bubble would be left orphaned beside the real row (the
-      // message appears twice). Collapse it onto the oldest still-optimistic
-      // (`tmp_…` id) message from me with identical content.
-      if (idx < 0 && !msg.id.startsWith('tmp_') && msg.senderChatId === getAuthUserChatId()) {
+      // Fallback reconcile when clientId didn't round-trip (older deployed
+      // socket server, or a backend that doesn't echo clientId): the sender
+      // receives its own message via BOTH the room's `message.sent` broadcast
+      // and the direct `message-sent-success` ack. Without a clientId match the
+      // optimistic bubble would be left orphaned beside the real row and the
+      // message appears twice. Collapse the real echo onto the oldest still-
+      // optimistic (`tmp_…` id) message with identical content/attachment.
+      // `tmp_` rows are inherently *our own* optimistic sends, so we don't gate
+      // on senderChatId equality — the server sometimes returns the sender id in
+      // a different shape than getAuthUserChatId(), which is exactly what left
+      // the duplicate in place before.
+      if (idx < 0 && !msg.id.startsWith('tmp_')) {
         idx = list.findIndex(
           (m) =>
             m.id.startsWith('tmp_') &&
-            m.senderChatId === msg.senderChatId &&
             m.content === msg.content &&
             m.hasFile === msg.hasFile
         )

@@ -78,6 +78,8 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 const subtotal = computed(() => cart.subtotalNumber)
+const summaryProductCount = computed(() => cart.distinctItemCount)
+const summaryTotalQuantity = computed(() => cart.totalQuantity)
 const taxPercentage = computed(() => Number(config.value?.taxPercentage) || 0)
 const shippingPercentage = computed(() => Number(config.value?.shippingCost) || 0)
 const taxAmount = computed(() => round2((subtotal.value / 100) * taxPercentage.value))
@@ -339,6 +341,11 @@ onBeforeUnmount(() => {
       <aside class="checkout__summary">
         <div class="summary-card">
           <h2 class="summary-card__title">Order summary</h2>
+          <p v-if="summaryProductCount" class="summary-card__count">
+            {{ summaryProductCount }} {{ summaryProductCount === 1 ? 'product' : 'products' }}
+            <span>-</span>
+            {{ summaryTotalQuantity }} {{ summaryTotalQuantity === 1 ? 'item' : 'items' }}
+          </p>
 
           <ul class="summary-card__items">
             <li v-for="item in cart.items" :key="item.id" class="summary-item">
@@ -612,6 +619,14 @@ onBeforeUnmount(() => {
   font-size: 1.05rem;
   font-weight: 500;
   color: var(--text);
+}
+.summary-card__count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 14px;
+  color: var(--text-light);
+  font-size: 0.82rem;
 }
 .summary-card__items {
   list-style: none;

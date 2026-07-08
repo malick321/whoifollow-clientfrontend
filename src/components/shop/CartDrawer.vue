@@ -103,7 +103,7 @@ function lineTotal(item: ShopCartItem): string {
   <SlideModal
     :model-value="modelValue"
     title="Your Cart"
-    :subtitle="cart.itemCount ? `${cart.itemCount} item${cart.itemCount === 1 ? '' : 's'}` : 'Empty'"
+    :subtitle="cart.distinctItemCount ? `${cart.distinctItemCount} product${cart.distinctItemCount === 1 ? '' : 's'}` : 'Empty'"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div v-if="cart.isEmpty" class="cart-drawer__empty">

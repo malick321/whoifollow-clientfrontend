@@ -164,7 +164,7 @@ watch(nextCursor, async () => {
         <button type="button" class="shop-hero__cart-btn" @click="cartOpen = true">
           <AppIcon name="cart" :size="20" />
           <span class="shop-hero__cart-label">Cart</span>
-          <span v-if="cart.itemCount > 0" class="shop-hero__cart-badge">{{ cart.itemCount }}</span>
+          <span v-if="cart.distinctItemCount > 0" class="shop-hero__cart-badge">{{ cart.distinctItemCount }}</span>
         </button>
       </div>
       <div class="shop-hero__search">

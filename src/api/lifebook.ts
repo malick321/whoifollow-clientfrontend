@@ -126,14 +126,17 @@ export async function createLifeBook(payload: {
   theme?: string
   eventId?: string
 }): Promise<LifeBook> {
+  const body: { title: string; theme?: string; eventId?: string } = {
+    title: payload.title
+  }
+  if (payload.theme) body.theme = payload.theme
+  const eventId = payload.eventId?.trim()
+  if (eventId) body.eventId = eventId
+
   const response = await fetch(buildV2ApiUrl('/lifebook/books'), {
     method: 'POST',
     headers: jsonHeaders(),
-    body: JSON.stringify({
-      title: payload.title,
-      theme: payload.theme,
-      eventId: payload.eventId
-    })
+    body: JSON.stringify(body)
   })
   const envelope = (await response.json()) as ApiLifeBookResponse
   return adaptLifeBook(unwrapBook(envelope))

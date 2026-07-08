@@ -5,6 +5,7 @@ const DEVICE_TOKEN_STORAGE_KEY = 'wif_device_token'
 const AUTH_EMAIL_STORAGE_KEY = 'wif_auth_email'
 const AUTH_USER_CHAT_ID_STORAGE_KEY = 'wif_auth_user_chat_id'
 const AUTH_USER_NAME_STORAGE_KEY = 'wif_auth_user_name'
+const AUTH_USER_AVATAR_URL_STORAGE_KEY = 'wif_auth_user_avatar_url'
 
 const initialDeviceToken =
   typeof window !== 'undefined' ? window.localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) ?? '' : ''
@@ -16,6 +17,10 @@ const initialUserChatId =
     : ''
 const initialUserName =
   typeof window !== 'undefined' ? window.localStorage.getItem(AUTH_USER_NAME_STORAGE_KEY) ?? '' : ''
+const initialUserAvatarUrl =
+  typeof window !== 'undefined'
+    ? window.localStorage.getItem(AUTH_USER_AVATAR_URL_STORAGE_KEY) ?? ''
+    : ''
 
 export const authDeviceToken = ref(initialDeviceToken)
 export const authEmail = ref(initialEmail)
@@ -24,6 +29,8 @@ export const authEmail = ref(initialEmail)
 export const authUserChatId = ref(initialUserChatId)
 /** The current user's display name (for the socket handshake query). */
 export const authUserName = ref(initialUserName)
+/** The current user's profile image, when the backend exposes one. */
+export const authUserAvatarUrl = ref(initialUserAvatarUrl)
 export const isAuthenticated = computed(() => !!authDeviceToken.value)
 
 export function getAuthUserChatId(): string {
@@ -32,6 +39,10 @@ export function getAuthUserChatId(): string {
 
 export function getAuthUserName(): string {
   return authUserName.value
+}
+
+export function getAuthUserAvatarUrl(): string {
+  return authUserAvatarUrl.value
 }
 
 function persistSession() {
@@ -59,6 +70,12 @@ function persistSession() {
     window.localStorage.setItem(AUTH_USER_NAME_STORAGE_KEY, authUserName.value)
   } else {
     window.localStorage.removeItem(AUTH_USER_NAME_STORAGE_KEY)
+  }
+
+  if (authUserAvatarUrl.value) {
+    window.localStorage.setItem(AUTH_USER_AVATAR_URL_STORAGE_KEY, authUserAvatarUrl.value)
+  } else {
+    window.localStorage.removeItem(AUTH_USER_AVATAR_URL_STORAGE_KEY)
   }
 }
 
@@ -113,6 +130,8 @@ export function setAuthSession(payload: {
   userChatId?: string
   /** Display name — needed for the chat socket handshake query. */
   userName?: string
+  /** Profile image URL, when available. */
+  userAvatarUrl?: string | null
 }) {
   authEmail.value = payload.email
   authDeviceToken.value = payload.deviceToken
@@ -120,17 +139,19 @@ export function setAuthSession(payload: {
   // wipe a previously-persisted chat identity.
   if (payload.userChatId !== undefined) authUserChatId.value = payload.userChatId
   if (payload.userName !== undefined) authUserName.value = payload.userName
+  if (payload.userAvatarUrl !== undefined) authUserAvatarUrl.value = payload.userAvatarUrl ?? ''
   persistSession()
   syncAxiosHeaders()
 }
 
 /** Set just the chat identity (userChatId + display name) without touching the
  *  token/email. Used when it wasn't captured at login (older session) and is
- *  resolved later via `GET /v2/chat/me`. Reactive — updates own/other message
+ *  resolved later via `GET /v2/me`. Reactive — updates own/other message
  *  alignment + unblocks the socket handshake the moment it lands. */
-export function setChatIdentity(userChatId: string, userName?: string) {
+export function setChatIdentity(userChatId: string, userName?: string, userAvatarUrl?: string | null) {
   if (userChatId) authUserChatId.value = userChatId
   if (userName !== undefined && userName !== '') authUserName.value = userName
+  if (userAvatarUrl !== undefined) authUserAvatarUrl.value = userAvatarUrl ?? ''
   persistSession()
 }
 
@@ -139,6 +160,7 @@ export function clearAuthSession() {
   authDeviceToken.value = ''
   authUserChatId.value = ''
   authUserName.value = ''
+  authUserAvatarUrl.value = ''
   persistSession()
   syncAxiosHeaders()
 }

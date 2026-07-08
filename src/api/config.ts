@@ -114,11 +114,14 @@ function buildCdnAssetUrl(
   if (!fileName) return undefined
   const trimmed = fileName.trim()
   if (!trimmed) return undefined
-  if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:')) {
+  if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed
   }
   const cleaned = trimmed.replace(/^\/+/, '')
   const normalizedPrefix = pathPrefix.replace(/^\/+/, '').replace(/\/+$/, '')
+  if (cleaned === normalizedPrefix || cleaned.startsWith(`${normalizedPrefix}/`)) {
+    return `${getCdnOrigin(environment)}/${cleaned}`
+  }
   return `${getCdnOrigin(environment)}/${normalizedPrefix}/${cleaned}`
 }
 
@@ -152,4 +155,28 @@ export function buildUserAvatarUrl(
   environment: ApiEnvironment = ACTIVE_API_ENV
 ): string | undefined {
   return buildCdnAssetUrl(fileName, 'users/avatar', environment)
+}
+
+/**
+ * Convert a task attachment filename/path into the public CDN location used by
+ * the legacy Tasks surface: `{cdnOrigin}/user_tasks/{fileName}`.
+ */
+export function buildTaskMediaUrl(
+  fileName: string | null | undefined,
+  environment: ApiEnvironment = ACTIVE_API_ENV
+): string | undefined {
+  const trimmed = fileName?.trim()
+  if (trimmed && /^https?:\/\//i.test(trimmed) && !trimmed.startsWith(getCdnOrigin(environment))) {
+    try {
+      const url = new URL(trimmed)
+      if (url.pathname.includes('/user_tasks/')) {
+        const file = url.pathname.split('/').filter(Boolean).pop()
+        if (file) return `${getCdnOrigin(environment)}/user_tasks/${file}`
+      }
+    } catch {
+      // Fall through to the generic CDN helper.
+    }
+  }
+
+  return buildCdnAssetUrl(fileName, 'user_tasks', environment)
 }

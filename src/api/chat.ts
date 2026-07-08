@@ -7,6 +7,7 @@
 // surface (and the REST fallback for sending).
 
 import { buildV2ApiUrl } from './config'
+import { fetchCurrentUser } from './me'
 import { getAuthHeaders } from '../auth-session'
 import {
   adaptConversation,
@@ -446,15 +447,11 @@ export interface ChatMe {
   avatarUrl: string | null
 }
 
-/** Current user's chat identity (GET /v2/chat/me). Called on connect when the
+/** Current user's chat identity (GET /v2/me). Called on connect when the
  *  userChatId wasn't captured at login, so own/other alignment + the socket
  *  handshake resolve regardless of session age. Returns null if unauthenticated. */
 export async function fetchMe(): Promise<ChatMe | null> {
-  const response = await fetch(buildV2ApiUrl('/chat/me'), { headers: getHeaders() })
-  const env = await readJson<{
-    data?: { userChatId?: string; userId?: string; name?: string; avatarUrl?: string | null }
-  }>(response)
-  const d = env?.data
+  const d = await fetchCurrentUser()
   if (!d?.userChatId) return null
   return {
     userChatId: String(d.userChatId),

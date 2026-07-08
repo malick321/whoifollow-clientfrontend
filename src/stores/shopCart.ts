@@ -48,6 +48,10 @@ export const useShopCartStore = defineStore('shopCart', {
     /** Numeric subtotal for arithmetic (totals, promo math). */
     subtotalNumber: (state): number => Number(state.subtotal) || 0,
     isEmpty: (state): boolean => state.items.length === 0,
+    /** Number of distinct cart lines/products shown in cart badges. */
+    distinctItemCount: (state): number => state.items.length,
+    /** Total unit quantity across all cart lines. */
+    totalQuantity: (state): number => state.items.reduce((sum, item) => sum + item.qty, 0),
     /** Applied promo discount as a fraction (0–1). */
     discountRate: (state): number =>
       state.appliedPromo ? (Number(state.appliedPromo.discountPercentage) || 0) / 100 : 0

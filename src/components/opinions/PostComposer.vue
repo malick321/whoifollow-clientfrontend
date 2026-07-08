@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { createOpinionPost, type OpinionPost } from '../../api/opinions'
 import AppIcon from '../AppIcon.vue'
 import TeamAvatar from '../TeamAvatar.vue'
@@ -7,8 +7,12 @@ import { pushToast } from '../../toast-center'
 
 const props = withDefaults(defineProps<{
   currentUserName?: string
+  currentUserAvatarUrl?: string | null
+  canPostAsSpecialist?: boolean
 }>(), {
-  currentUserName: 'there'
+  currentUserName: 'there',
+  currentUserAvatarUrl: null,
+  canPostAsSpecialist: false
 })
 
 const emit = defineEmits<{
@@ -26,12 +30,20 @@ const files = ref<File[]>([])
 const previews = ref<PreviewImage[]>([])
 const submitting = ref(false)
 const focused = ref(false)
+const postAsSpecialist = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const canSubmit = computed(() => content.value.trim() !== '' || files.value.length > 0)
 // The composer "opens" once the user engages (focus, typed text, or
 // attached an image) — collapsed it reads as a single inviting prompt.
 const expanded = computed(() => focused.value || canSubmit.value)
+
+watch(
+  () => props.canPostAsSpecialist,
+  (canPost) => {
+    if (!canPost) postAsSpecialist.value = false
+  }
+)
 
 function revokePreviews() {
   previews.value.forEach((preview) => URL.revokeObjectURL(preview.url))
@@ -73,10 +85,12 @@ async function submit() {
   try {
     const post = await createOpinionPost({
       content: content.value.trim(),
-      images: files.value
+      images: files.value,
+      isSpecialist: postAsSpecialist.value
     })
     content.value = ''
     setFiles([])
+    postAsSpecialist.value = false
     focused.value = false
     if (textareaRef.value) textareaRef.value.style.height = 'auto'
     emit('created', post)
@@ -98,7 +112,7 @@ onBeforeUnmount(revokePreviews)
 <template>
   <form class="opinion-composer" :class="{ 'opinion-composer--expanded': expanded }" @submit.prevent="submit">
     <div class="opinion-composer__row">
-      <TeamAvatar :name="currentUserName" size="attendee" />
+      <TeamAvatar :name="currentUserName" :image-url="currentUserAvatarUrl ?? undefined" size="attendee" />
       <textarea
         ref="textareaRef"
         v-model="content"
@@ -123,11 +137,21 @@ onBeforeUnmount(revokePreviews)
 
     <Transition name="opinion-composer-fade">
       <div v-show="expanded" class="opinion-composer__actions">
-        <label class="opinion-composer__attach" :class="{ 'is-disabled': submitting }">
-          <span class="opinion-composer__attach-mark"><AppIcon name="document" :size="17" /></span>
-          <span>Photo</span>
-          <input type="file" accept="image/*" multiple :disabled="submitting" @change="onFileChange" />
-        </label>
+        <div class="opinion-composer__tools">
+          <label
+            v-if="canPostAsSpecialist"
+            class="opinion-composer__specialist"
+            :class="{ 'is-disabled': submitting, 'is-selected': postAsSpecialist }"
+          >
+            <input v-model="postAsSpecialist" type="checkbox" :disabled="submitting" />
+            <span>Specialist</span>
+          </label>
+          <label class="opinion-composer__attach" :class="{ 'is-disabled': submitting }">
+            <span class="opinion-composer__attach-mark"><AppIcon name="document" :size="17" /></span>
+            <span>Photo</span>
+            <input type="file" accept="image/*" multiple :disabled="submitting" @change="onFileChange" />
+          </label>
+        </div>
         <button type="submit" class="opinion-composer__submit" :disabled="!canSubmit || submitting">
           <span v-if="submitting" class="opinion-composer__spinner" aria-hidden="true"></span>
           {{ submitting ? 'Posting' : 'Post' }}
@@ -250,6 +274,38 @@ onBeforeUnmount(revokePreviews)
   padding-left: 52px;
 }
 
+.opinion-composer__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.opinion-composer__specialist {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--secondary);
+  background: var(--surface-pill);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.opinion-composer__specialist input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+}
+
+.opinion-composer__specialist.is-selected {
+  color: var(--primary);
+  background: var(--primary-light-3);
+}
+
 .opinion-composer__attach {
   display: inline-flex;
   align-items: center;
@@ -286,6 +342,11 @@ onBeforeUnmount(revokePreviews)
 }
 
 .opinion-composer__attach.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.opinion-composer__specialist.is-disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }

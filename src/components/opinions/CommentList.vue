@@ -14,6 +14,7 @@ import { formatRelativeTime } from './relative-time'
 const props = defineProps<{
   postId: string
   currentUserName: string
+  currentUserAvatarUrl?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +82,7 @@ async function submit() {
       userChatId: getAuthUserChatId() || null,
       userId: getAuthUserId(),
       name: getAuthUserName() || props.currentUserName,
-      avatarUrl: null
+      avatarUrl: props.currentUserAvatarUrl ?? null
     },
     content: value,
     createdAt: new Date().toISOString()
@@ -148,7 +149,7 @@ watch(
     </div>
 
     <form class="opinion-comments__form" @submit.prevent="submit">
-      <TeamAvatar :name="currentUserName" size="sm" />
+      <TeamAvatar :name="currentUserName" :image-url="currentUserAvatarUrl ?? undefined" size="sm" />
       <div class="opinion-comments__field">
         <input v-model="content" type="text" placeholder="Write a comment…" :disabled="saving" />
         <button type="submit" aria-label="Post comment" :disabled="!content.trim() || saving">

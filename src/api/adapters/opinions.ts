@@ -5,6 +5,7 @@ import type {
   ApiOpinionCommentResponse,
   ApiOpinionLikeResponse,
   ApiOpinionLikersResponse,
+  ApiOpinionMeResponse,
   ApiOpinionPost,
   ApiOpinionPostResponse,
   ApiOpinionPostsResponse
@@ -15,6 +16,7 @@ import type {
   OpinionCommentsPage,
   OpinionLikeResult,
   OpinionLikersPage,
+  OpinionMe,
   OpinionPost,
   OpinionPostsPage
 } from '../opinions'
@@ -38,7 +40,8 @@ export function adaptOpinionPost(raw: ApiOpinionPost): OpinionPost {
     likedByMe: !!raw.likedByMe,
     commentCount: Number(raw.commentCount ?? 0),
     createdAt: raw.createdAt ?? '',
-    isMine: !!raw.isMine
+    isMine: !!raw.isMine,
+    isSpecialist: !!raw.isSpecialist
   }
 }
 
@@ -95,5 +98,17 @@ export function adaptOpinionLikers(response: ApiOpinionLikersResponse): OpinionL
   return {
     users: rows.map(adaptOpinionAuthor),
     nextCursor: data?.nextCursor ?? null
+  }
+}
+
+export function adaptOpinionMe(response: ApiOpinionMeResponse): OpinionMe | null {
+  const user = response.data?.user
+  if (!user) return null
+
+  return {
+    user: {
+      ...adaptOpinionAuthor(user),
+      isSpecialist: !!user.isSpecialist
+    }
   }
 }

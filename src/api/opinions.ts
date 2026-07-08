@@ -1,6 +1,7 @@
 import { getAuthHeaders } from '../auth-session'
 import { adaptOpinionComments, adaptOpinionCommentResponse, adaptOpinionLike, adaptOpinionLikers, adaptOpinionPostResponse, adaptOpinionPosts } from './adapters/opinions'
 import { buildV2ApiUrl } from './config'
+import { fetchCurrentUser } from './me'
 import type {
   ApiOpinionCommentResponse,
   ApiOpinionCommentsResponse,
@@ -27,6 +28,7 @@ export interface OpinionPost {
   commentCount: number
   createdAt: string
   isMine: boolean
+  isSpecialist: boolean
 }
 
 export interface OpinionComment {
@@ -56,6 +58,12 @@ export interface OpinionLikeResult {
   likedByMe: boolean
 }
 
+export interface OpinionMe {
+  user: OpinionAuthor & {
+    isSpecialist: boolean
+  }
+}
+
 export interface CursorPageParams {
   cursor?: string | null
   limit?: number
@@ -64,6 +72,7 @@ export interface CursorPageParams {
 export interface CreateOpinionPostPayload {
   content?: string
   images?: File[]
+  isSpecialist?: boolean
 }
 
 function buildCursorQuery(params: CursorPageParams = {}): string {
@@ -82,7 +91,7 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     const message = body.responseStatus?.message || body.message || `Request failed: ${response.status}`
-    throw new Error(message)
+    throw Object.assign(new Error(message), { code: response.status })
   }
 
   return body as T
@@ -99,9 +108,15 @@ export async function fetchOpinionPosts(params: CursorPageParams = {}): Promise<
   return adaptOpinionPosts(await parseEnvelope<ApiOpinionPostsResponse>(response))
 }
 
+export async function fetchOpinionMe(): Promise<OpinionMe | null> {
+  const user = await fetchCurrentUser()
+  return user ? { user } : null
+}
+
 export async function createOpinionPost(payload: CreateOpinionPostPayload): Promise<OpinionPost> {
   const formData = new FormData()
   if (payload.content !== undefined) formData.set('content', payload.content)
+  if (payload.isSpecialist) formData.set('expStatus', '1')
   payload.images?.forEach((file) => formData.append('images[]', file))
 
   const response = await fetch(buildV2ApiUrl('/opinions/posts'), {

@@ -23,7 +23,6 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import PageTemplate from '../components/lifebook/PageTemplate.vue'
 import PhotoPickerModal from '../components/lifebook/PhotoPickerModal.vue'
 import TemplatePickerModal from '../components/lifebook/TemplatePickerModal.vue'
-import ThemeToggle from '../components/ThemeToggle.vue'
 import { THEMES, slotsForTemplate, templateMeta } from '../components/lifebook/lifebookCatalogue'
 import {
   autoBuildLifeBook,
@@ -385,7 +384,6 @@ function goBack() {
         </div>
 
         <div class="lb-toolbar__actions">
-          <ThemeToggle />
           <button type="button" class="lb-btn lb-btn--ghost" @click="openAutobuild">
             <span class="lb-spark" aria-hidden="true">✦</span> Auto-build
           </button>

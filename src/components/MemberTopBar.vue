@@ -13,10 +13,18 @@
 // buttons with no page yet (Association, Go Pro, Notifications) fire a
 // "coming soon" toast for visual parity without dead clicks.
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import TeamAvatar from './TeamAvatar.vue'
-import { authEmail, clearAuthSession, isAuthenticated } from '../auth-session'
+import {
+  authEmail,
+  authUserAvatarUrl,
+  authUserName,
+  clearAuthSession,
+  isAuthenticated,
+  setChatIdentity
+} from '../auth-session'
+import { fetchCurrentUser } from '../api/me'
 import { openLoginModal } from '../login-modal-center'
 import { useShopCartStore } from '../stores/shopCart'
 import { pushToast } from '../toast-center'
@@ -62,6 +70,7 @@ const RAIL_ITEMS: NavItem[] = [
 ]
 
 const route = useRoute()
+const router = useRouter()
 const cart = useShopCartStore()
 
 function isActive(item: NavItem): boolean {
@@ -77,10 +86,30 @@ function comingSoon(what: string) {
 // Account menu.
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
+
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0]?.trim() ?? ''
+  if (!local) return ''
+  return local
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b[a-z]/g, (char) => char.toUpperCase())
+}
+
 const avatarName = computed(() => {
-  const source = authEmail.value || 'WIF User'
-  return source.split('@')[0] || source
+  return authUserName.value || nameFromEmail(authEmail.value) || 'WIF User'
 })
+const avatarUrl = computed(() => authUserAvatarUrl.value || undefined)
+
+async function refreshIdentity() {
+  if (!isAuthenticated.value) return
+  try {
+    const me = await fetchCurrentUser()
+    if (me?.userChatId) setChatIdentity(me.userChatId, me.name, me.avatarUrl)
+  } catch {
+    // Best-effort identity refresh; route guards handle auth failures.
+  }
+}
+
 function toggleMenu() {
   menuOpen.value = !menuOpen.value
 }
@@ -88,6 +117,9 @@ function logout() {
   menuOpen.value = false
   clearAuthSession()
   pushToast({ tone: 'warning', title: 'Logged out', message: 'Your session has been cleared from this browser.' })
+  if (!(route.meta as { public?: boolean }).public) {
+    void router.replace({ name: 'login', query: { redirect: route.fullPath } })
+  }
 }
 function onLogin() {
   menuOpen.value = false
@@ -98,8 +130,15 @@ function onDocClick(e: MouseEvent) {
   const t = e.target as Node | null
   if (menuRef.value && t && !menuRef.value.contains(t)) menuOpen.value = false
 }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
+onMounted(() => {
+  document.addEventListener('mousedown', onDocClick)
+  void refreshIdentity()
+})
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
+
+watch(isAuthenticated, (authenticated) => {
+  if (authenticated) void refreshIdentity()
+})
 </script>
 
 <template>
@@ -177,7 +216,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
             <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
             <path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6" />
           </svg>
-          <span v-if="cart.itemCount > 0" class="member-topbar__badge">{{ cart.itemCount }}</span>
+          <span v-if="cart.distinctItemCount > 0" class="member-topbar__badge">{{ cart.distinctItemCount }}</span>
         </router-link>
         <button type="button" class="member-topbar__icon-btn" aria-label="Notifications" @click="comingSoon('Notifications')">
           <img :src="notificationIcon" alt="" class="nav-ico" />
@@ -189,7 +228,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
             :aria-expanded="menuOpen ? 'true' : 'false'"
             @click="toggleMenu"
           >
-            <TeamAvatar :name="avatarName" size="sm" />
+            <TeamAvatar :name="avatarName" :image-url="avatarUrl" size="sm" />
           </button>
           <div v-if="menuOpen" class="member-topbar__menu" role="menu">
             <template v-if="isAuthenticated">

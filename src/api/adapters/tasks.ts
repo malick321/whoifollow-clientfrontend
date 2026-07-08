@@ -6,6 +6,7 @@ import type {
   ApiTaskStep,
   ApiTasksResponse
 } from '../contracts/tasks'
+import { buildTaskMediaUrl } from '../config'
 import type { Task, TaskMedia, TaskStep } from '../tasks'
 
 export function adaptTaskStep(raw: ApiTaskStep): TaskStep {
@@ -20,7 +21,7 @@ export function adaptTaskMedia(raw: ApiTaskMedia): TaskMedia {
   return {
     id: String(raw.id),
     name: raw.name ?? 'Attachment',
-    url: raw.url ?? '',
+    url: buildTaskMediaUrl(raw.url) ?? '',
     type: raw.type ?? undefined
   }
 }

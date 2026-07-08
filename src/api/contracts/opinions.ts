@@ -21,6 +21,7 @@ export interface ApiOpinionPost {
   commentCount: number | null
   createdAt: string | null
   isMine: boolean | null
+  isSpecialist?: boolean | null
 }
 
 export interface ApiOpinionComment {
@@ -73,5 +74,12 @@ export interface ApiOpinionLikersResponse {
   data?: {
     users?: ApiOpinionAuthor[] | null
     nextCursor?: string | null
+  } | null
+}
+
+export interface ApiOpinionMeResponse {
+  responseStatus?: ApiOpinionResponseStatus
+  data?: {
+    user?: (ApiOpinionAuthor & { isSpecialist?: boolean | null }) | null
   } | null
 }
