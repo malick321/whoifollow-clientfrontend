@@ -345,6 +345,88 @@ export async function sendFilesRest(
 
 // ── 7. Receipts ───────────────────────────────────────────────────────────────
 
+export interface ChatUploadIntentInputFile {
+  name: string
+  type: string
+  size: number
+}
+
+export interface ChatUploadTarget {
+  messageId: string
+  name: string
+  type: string
+  size: number
+  method: 'PUT'
+  uploadUrl: string
+  headers: Record<string, string>
+  expiresAt: string
+}
+
+export interface ChatUploadIntent {
+  uploadSessionId: string
+  uploadToken: string
+  expiresAt: string
+  uploads: ChatUploadTarget[]
+}
+
+interface ApiChatUploadIntentResponse {
+  responseStatus?: { message?: string; statusCode?: number; text?: string }
+  data?: ChatUploadIntent | null
+}
+
+export async function createChatUploadIntent(
+  id: string,
+  body: {
+    files: ChatUploadIntentInputFile[]
+    content?: string
+    parentMessageId?: string
+    clientId?: string
+  }
+): Promise<ChatUploadIntent> {
+  const response = await fetch(
+    buildV2ApiUrl(`/chat/conversations/${encodeURIComponent(id)}/messages/upload-intents`),
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        content: body.content,
+        parentMessageId: body.parentMessageId,
+        clientId: body.clientId,
+        files: body.files
+      })
+    }
+  )
+  const env = await readJson<ApiChatUploadIntentResponse>(response)
+  if (!response.ok || !env?.data) {
+    throw new Error(env?.responseStatus?.message || `Failed to prepare upload (${response.status})`)
+  }
+  return env.data
+}
+
+export async function completeChatUpload(
+  id: string,
+  body: { uploadSessionId: string; uploadToken: string; messageIds: string[] }
+): Promise<ChatMessage[]> {
+  const response = await fetch(
+    buildV2ApiUrl(`/chat/conversations/${encodeURIComponent(id)}/messages/complete-upload`),
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        uploadSessionId: body.uploadSessionId,
+        uploadToken: body.uploadToken,
+        messageIds: body.messageIds
+      })
+    }
+  )
+  const env = await readJson<ApiMessageResponse>(response)
+  if (!response.ok) {
+    throw new Error(env?.responseStatus?.message || `Failed to complete upload (${response.status})`)
+  }
+  const rows = env?.data?.messages ?? (env?.data?.message ? [env.data.message] : [])
+  return rows.map(adaptMessage)
+}
+
 export async function markDelivered(messageId: string, deliveredAt?: string): Promise<number> {
   const response = await fetch(
     buildV2ApiUrl(`/chat/messages/${encodeURIComponent(messageId)}/mark-delivered`),

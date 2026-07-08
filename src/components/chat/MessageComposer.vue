@@ -4,6 +4,8 @@ import AppIcon from '../AppIcon.vue'
 import { useChatStore } from '../../stores/chat'
 import type { ChatMessage } from '../../api/chat'
 import { formatFileSize, isAudioFile, isImageFile, isVideoFile } from './chat-format'
+import { prepareChatUploadFiles } from '../../lib/chat-media'
+import { pushToast } from '../../toast-center'
 
 const props = defineProps<{
   conversationId: string
@@ -35,6 +37,7 @@ const textarea = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const pendingFiles = ref<PendingFile[]>([])
 const sending = ref(false)
+const preparingFiles = ref(false)
 
 const placeholder = computed(() =>
   props.recipientName ? `Type your message for ${props.recipientName}` : 'Type your message'
@@ -100,7 +103,7 @@ function onKeydown(e: KeyboardEvent) {
 
 async function send() {
   const content = text.value.trim()
-  if (sending.value || (!content && !pendingFiles.value.length)) return
+  if (sending.value || preparingFiles.value || (!content && !pendingFiles.value.length)) return
 
   sending.value = true
   try {
@@ -129,6 +132,7 @@ async function send() {
 }
 
 function pickFiles() {
+  if (sending.value || preparingFiles.value) return
   fileInput.value?.click()
 }
 
@@ -172,14 +176,44 @@ function removePendingFile(id: string) {
   pendingFiles.value = pendingFiles.value.filter((item) => item.id !== id)
 }
 
-function onFilesPicked(e: Event) {
+async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement
   const files = input.files ? Array.from(input.files) : []
   if (!files.length) return
 
-  addPendingFiles(files)
-  input.value = ''
-  void nextTick(() => textarea.value?.focus())
+  preparingFiles.value = true
+  try {
+    const existingBytes = pendingFiles.value.reduce((sum, file) => sum + file.size, 0)
+    const prepared = await prepareChatUploadFiles(files, pendingFiles.value.length, existingBytes)
+    if (prepared.accepted.length) {
+      addPendingFiles(prepared.accepted.map((item) => item.file))
+    }
+    if (prepared.rejected.length) {
+      pushToast({
+        tone: 'warning',
+        title: prepared.rejected.length === 1 ? 'File not added' : `${prepared.rejected.length} files not added`,
+        message: prepared.rejected[0]?.reason
+      })
+    }
+    if (prepared.optimizedCount) {
+      pushToast({
+        tone: 'success',
+        title: prepared.optimizedCount === 1 ? 'Image optimized' : 'Images optimized',
+        message: 'Compressed before upload.'
+      })
+    }
+  } catch (error) {
+    console.error('[chat] Failed to prepare attachments', error)
+    pushToast({
+      tone: 'warning',
+      title: 'Could not prepare files',
+      message: 'Please try again.'
+    })
+  } finally {
+    preparingFiles.value = false
+    input.value = ''
+    void nextTick(() => textarea.value?.focus())
+  }
 }
 
 onBeforeUnmount(() => {
@@ -254,6 +288,7 @@ onBeforeUnmount(() => {
         class="composer__attach"
         aria-label="Attach files"
         title="Attach files"
+        :disabled="sending || preparingFiles"
         @click="pickFiles"
       >
         <AppIcon name="folder" :size="22" />
@@ -263,6 +298,7 @@ onBeforeUnmount(() => {
         type="file"
         multiple
         class="composer__file-input"
+        :disabled="sending || preparingFiles"
         @change="onFilesPicked"
       />
 
@@ -280,7 +316,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="composer__send"
-        :disabled="sending || !canSend"
+        :disabled="sending || preparingFiles || !canSend"
         aria-label="Send message"
         title="Send"
         @click="send"
@@ -481,6 +517,11 @@ html.dark-mode .composer__attachment-preview {
 
 .composer__attach:hover {
   background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+}
+
+.composer__attach:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .composer__file-input {

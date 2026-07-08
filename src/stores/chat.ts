@@ -26,19 +26,22 @@ import { adaptMessage } from '../api/adapters/chat'
 import type { ApiMessage } from '../api/contracts/chat'
 import {
   bulkMarkDelivered as bulkMarkDeliveredRest,
+  completeChatUpload,
+  createChatUploadIntent,
   deleteMessageRest,
   fetchConversation,
   fetchConversations,
   fetchMessages,
   getOrCreateIndividualConversation,
-  sendFilesRest,
   sendMessageRest,
   togglePin as togglePinRest,
   type ChatConversation,
   type ChatMessage,
+  type ChatUploadTarget,
   type ChatMessageStatus
 } from '../api/chat'
 import { fetchCurrentUser } from '../api/me'
+import { pushToast } from '../toast-center'
 import {
   cacheConversations,
   cacheMessages,
@@ -98,6 +101,25 @@ function revokeLocalFileUrls(message: ChatMessage) {
     if (file.url?.startsWith('blob:')) URL.revokeObjectURL(file.url)
     if (file.thumbnailUrl?.startsWith('blob:')) URL.revokeObjectURL(file.thumbnailUrl)
   }
+}
+
+async function putChatUpload(file: File, target: ChatUploadTarget) {
+  const response = await fetch(target.uploadUrl, {
+    method: target.method,
+    headers: target.headers,
+    body: file
+  })
+  if (!response.ok) {
+    throw new Error(`Storage upload failed (${response.status})`)
+  }
+}
+
+function uploadErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Please try again.'
+  if (error.message === 'Failed to fetch') {
+    return 'Could not reach media storage. Please try again.'
+  }
+  return error.message || 'Please try again.'
 }
 
 export interface TypingState {
@@ -580,13 +602,24 @@ export const useChatStore = defineStore('chat', {
       }
       this.appendMessage(id, temp)
 
-      void sendFilesRest(id, {
-        files: files.map((f) => f.file),
+      void createChatUploadIntent(id, {
+        files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
         content,
         parentMessageId: parent?.id,
         clientId
       })
-        .then((messages) => {
+        .then(async (intent) => {
+          if (intent.uploads.length !== files.length) {
+            throw new Error('Upload preparation did not match selected files.')
+          }
+          for (let i = 0; i < intent.uploads.length; i += 1) {
+            await putChatUpload(files[i].file, intent.uploads[i])
+          }
+          const messages = await completeChatUpload(id, {
+            uploadSessionId: intent.uploadSessionId,
+            uploadToken: intent.uploadToken,
+            messageIds: intent.uploads.map((upload) => upload.messageId)
+          })
           for (const message of messages) void this.onIncomingMessage(message)
           if (socket && socket.connected) {
             const messageIds = messages.map((message) => message.id).filter(Boolean)
@@ -599,7 +632,7 @@ export const useChatStore = defineStore('chat', {
           }
         })
         .catch((err) => {
-          console.warn('[chat] sendFiles REST upload failed', err)
+          console.warn('[chat] sendFiles direct upload failed', err)
           const list = this.messagesByConversation[id] ?? []
           const idx = list.findIndex((m) => m.id === clientId)
           if (idx >= 0) {
@@ -607,6 +640,11 @@ export const useChatStore = defineStore('chat', {
             list.splice(idx, 1)
           }
           void removeCachedMessage(clientId)
+          pushToast({
+            tone: 'warning',
+            title: 'Upload failed',
+            message: uploadErrorMessage(err)
+          })
         })
       return clientId
     },
