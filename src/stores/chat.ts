@@ -885,8 +885,17 @@ export const useChatStore = defineStore('chat', {
         // Drop anything the viewer hid via "Delete for me" so REST history /
         // offline-sync refetches never resurrect it.
         if (this.hiddenMessageIds.has(msg.id)) continue
-        const existing =
+        let existing =
           byId.get(msg.id) ?? (msg.clientId ? byClientId.get(msg.clientId) : undefined)
+        // Collapse a still-optimistic (`tmp_…`) bubble onto its real server row
+        // when clientId didn't round-trip (old deployed server): match on
+        // content + attachment. Without this the optimistic copy and the real
+        // row coexist and the message shows twice.
+        if (!existing && !msg.id.startsWith('tmp_')) {
+          existing = current.find(
+            (m) => m.id.startsWith('tmp_') && m.content === msg.content && m.hasFile === msg.hasFile
+          )
+        }
         if (existing) {
           const idx = current.indexOf(existing)
           if (idx >= 0) current.splice(idx, 1, msg)
@@ -897,8 +906,33 @@ export const useChatStore = defineStore('chat', {
         byId.set(msg.id, msg)
       }
 
-      current.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      this.messagesByConversation[conversationId] = current
+      // Final sweep: drop any orphaned optimistic (`tmp_…`) bubble that now has
+      // a real twin with identical content/attachment. This catches the
+      // re-entry case where the cache seeded BOTH the stale optimistic copy and
+      // the real row (an echo whose clientId never round-tripped), which the
+      // id/clientId reconciliation above can't link. Also purge it from cache
+      // so a later reload doesn't resurrect the duplicate.
+      const realKeys = new Set(
+        current
+          .filter((m) => !m.id.startsWith('tmp_'))
+          .map((m) => `${m.content}|${m.hasFile ? 1 : 0}`)
+      )
+      const now = Date.now()
+      const swept = current.filter((m) => {
+        if (!m.id.startsWith('tmp_')) return true
+        // Leave genuinely in-flight sends alone (their echo may still be en
+        // route); only collapse stale optimistic bubbles (>10s old) that have a
+        // real twin.
+        const age = now - new Date(m.createdAt).getTime()
+        if (age > 10_000 && realKeys.has(`${m.content}|${m.hasFile ? 1 : 0}`)) {
+          void removeCachedMessage(m.id)
+          return false
+        }
+        return true
+      })
+
+      swept.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      this.messagesByConversation[conversationId] = swept
     }
   }
 })
