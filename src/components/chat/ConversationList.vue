@@ -12,7 +12,7 @@ const lock = useChatLockStore()
 const { conversations, activeConversationId, loadingConversations } = storeToRefs(store)
 
 const search = ref('')
-const activeFilter = ref<'all' | 'unread' | 'groups'>('all')
+const activeFilter = ref<'all' | 'unread' | 'groups' | 'archived'>('all')
 const lockSetupOpen = ref(false)
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -27,12 +27,12 @@ watch(search, (value) => {
 const filterItems = [
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
-  { key: 'groups', label: 'Groups' }
+  { key: 'groups', label: 'Groups' },
+  { key: 'archived', label: 'Archived' }
 ] as const
 
 const sortedConversations = computed(() => {
   return conversations.value
-    .filter((c) => !c.isArchived)
     .slice()
     .sort((a, b) => {
       if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
@@ -44,18 +44,22 @@ const sortedConversations = computed(() => {
 
 // WhatsApp-style: ONE unified list, then local filter chips.
 const visibleConversations = computed(() => {
+  const rows = sortedConversations.value.filter((c) =>
+    activeFilter.value === 'archived' ? c.isArchived : !c.isArchived
+  )
   if (activeFilter.value === 'unread') {
-    return sortedConversations.value.filter((c) => (c.unreadCount || 0) > 0)
+    return rows.filter((c) => (c.unreadCount || 0) > 0)
   }
   if (activeFilter.value === 'groups') {
-    return sortedConversations.value.filter((c) => c.type === 'team')
+    return rows.filter((c) => c.type === 'team')
   }
-  return sortedConversations.value
+  return rows
 })
 
 const emptyCopy = computed(() => {
   if (activeFilter.value === 'unread') return 'No unread chats.'
   if (activeFilter.value === 'groups') return 'No group chats yet.'
+  if (activeFilter.value === 'archived') return 'No archived chats.'
   return 'No conversations yet.'
 })
 
@@ -69,7 +73,7 @@ function select(id: string) {
   void store.openConversation(id)
 }
 
-defineEmits<{ (e: 'add-team'): void }>()
+defineEmits<{ (e: 'add-team'): void; (e: 'start-chat'): void }>()
 </script>
 
 <template>
@@ -93,11 +97,20 @@ defineEmits<{ (e: 'add-team'): void }>()
           <button
             type="button"
             class="conv-list__new"
+            aria-label="New individual chat"
+            title="New chat"
+            @click="$emit('start-chat')"
+          >
+            <AppIcon name="message" :size="18" />
+          </button>
+          <button
+            type="button"
+            class="conv-list__new"
             aria-label="Add team"
             title="Add team"
             @click="$emit('add-team')"
           >
-            <AppIcon name="message" :size="18" />
+            <AppIcon name="people" :size="18" />
           </button>
         </div>
       </div>
@@ -128,9 +141,9 @@ defineEmits<{ (e: 'add-team'): void }>()
         <button
           type="button"
           class="conv-filter conv-filter--add"
-          aria-label="Add team"
-          title="Add team"
-          @click="$emit('add-team')"
+          aria-label="New chat"
+          title="New chat"
+          @click="$emit('start-chat')"
         >
           +
         </button>
@@ -144,7 +157,7 @@ defineEmits<{ (e: 'add-team'): void }>()
         :conversation="conv"
         :active="conv.id === activeConversationId"
         :online="isOnline(conv.id)"
-        :locked="lock.conversationHasLock(conv.id)"
+        :locked="lock.isConversationLocked(conv.id)"
         @select="select(conv.id)"
       />
 

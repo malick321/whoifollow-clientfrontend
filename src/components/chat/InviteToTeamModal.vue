@@ -27,10 +27,12 @@ const props = defineProps<{
   teamId: string
   teamName: string
   teamLogoUrl?: string | null
+  excludedUserChatIds?: string[]
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  (e: 'sent'): void
 }>()
 
 type Tab = 'link' | 'contact' | 'friends'
@@ -134,6 +136,7 @@ async function sendContactInvite() {
     email.value = ''
     contactRole.value = 'teammate'
     contactMarkAsPlayer.value = false
+    emit('sent')
     emit('update:modelValue', false)
   } catch (error) {
     pushToast({
@@ -163,8 +166,14 @@ watch(friendRole, (role) => {
 })
 
 const filteredFriendResults = computed(() => {
-  const taken = new Set(selectedFriends.value.map((f) => f.userChatId))
-  return friendResults.value.filter((f) => !taken.has(f.userChatId))
+  const takenChatIds = new Set(selectedFriends.value.map((f) => f.userChatId))
+  const takenUserIds = new Set(selectedFriends.value.map((f) => f.userId).filter(Boolean))
+  const excluded = new Set((props.excludedUserChatIds ?? []).filter(Boolean))
+  return friendResults.value.filter((f) =>
+    !takenChatIds.has(f.userChatId) &&
+    !(f.userId && takenUserIds.has(f.userId)) &&
+    !excluded.has(f.userChatId)
+  )
 })
 
 async function loadFriends(search = '') {
@@ -183,7 +192,9 @@ function onFriendSearch() {
 }
 
 function addFriend(friend: ChatFriend) {
-  if (selectedFriends.value.some((f) => f.userChatId === friend.userChatId)) return
+  if (selectedFriends.value.some((f) =>
+    f.userChatId === friend.userChatId || (!!f.userId && f.userId === friend.userId)
+  )) return
   selectedFriends.value = [...selectedFriends.value, friend]
   friendQuery.value = ''
 }
@@ -211,6 +222,7 @@ async function addFriendsToTeam() {
     })
     selectedFriends.value = []
     friendQuery.value = ''
+    emit('sent')
     emit('update:modelValue', false)
   } catch (error) {
     pushToast({

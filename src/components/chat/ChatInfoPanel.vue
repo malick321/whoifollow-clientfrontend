@@ -19,6 +19,7 @@ import PresenceDot from './PresenceDot.vue'
 import ToggleSwitch from '../../components/ToggleSwitch.vue'
 import InviteToTeamModal from './InviteToTeamModal.vue'
 import { formatFileSize } from './chat-format'
+import { getAuthUserChatId } from '../../auth-session'
 import { useChatStore } from '../../stores/chat'
 import { useChatLockStore } from '../../stores/chatLock'
 import {
@@ -26,11 +27,15 @@ import {
   changeTeamLogo,
   fetchSharedFiles,
   fetchTeamDetail,
+  fetchTeamMembers,
   leaveTeam,
+  removeTeamMember,
   reportTeam,
+  updateTeamMemberRole,
   updateTeamSettings,
   type ChatSharedFile,
   type ChatTeamDetail,
+  type ChatTeamMember,
   type ChatTeamSettings
 } from '../../api/chat'
 import { pushToast } from '../../toast-center'
@@ -45,7 +50,7 @@ const store = useChatStore()
 const chatLock = useChatLockStore()
 
 // Per-conversation PIN lock (WhatsApp "Chat Lock").
-const convLocked = computed(() => chatLock.conversationHasLock(props.conversationId))
+const convHasLock = computed(() => chatLock.conversationHasLock(props.conversationId))
 function toggleConvLock() {
   if (!chatLock.enabled) {
     pushToast({
@@ -55,7 +60,7 @@ function toggleConvLock() {
     })
     return
   }
-  if (convLocked.value) chatLock.removeConversationLock(props.conversationId)
+  if (convHasLock.value) chatLock.removeConversationLock(props.conversationId)
   else chatLock.lockConversation(props.conversationId)
   settingsOpen.value = false
 }
@@ -77,12 +82,16 @@ const teamId = computed(
 // ── Team detail ──────────────────────────────────────────────────
 const detail = ref<ChatTeamDetail | null>(null)
 const detailLoading = ref(false)
+const detailLoadedTeamId = ref('')
 
-async function loadDetail() {
-  if (!isTeam.value || !teamId.value) return
+async function loadDetail(force = false) {
+  const id = teamId.value
+  if (!isTeam.value || !id || detailLoading.value) return
+  if (!force && detail.value && detailLoadedTeamId.value === id) return
   detailLoading.value = true
   try {
-    detail.value = await fetchTeamDetail(teamId.value)
+    detail.value = await fetchTeamDetail(id)
+    detailLoadedTeamId.value = id
   } catch (err) {
     console.warn('[chat] fetchTeamDetail failed', err)
   } finally {
@@ -136,12 +145,20 @@ const eventDateLine = computed(() => {
 // than a big inline reveal — cleaner, more standard UX.
 const settingsOpen = ref(false)
 const actionsWrap = ref<HTMLElement | null>(null)
+const scrollRef = ref<HTMLElement | null>(null)
 const logoInputRef = ref<HTMLInputElement | null>(null)
+const memberMenuId = ref<string | null>(null)
 
 function onDocPointer(e: MouseEvent) {
-  if (!settingsOpen.value) return
   const t = e.target as Node | null
-  if (actionsWrap.value && t && !actionsWrap.value.contains(t)) settingsOpen.value = false
+  const el = e.target as HTMLElement | null
+  if (scrollRef.value && t === scrollRef.value) return
+  if (settingsOpen.value && actionsWrap.value && t && !actionsWrap.value.contains(t)) {
+    settingsOpen.value = false
+  }
+  if (memberMenuId.value && !el?.closest('.teammate__actions')) {
+    memberMenuId.value = null
+  }
 }
 onMounted(() => document.addEventListener('mousedown', onDocPointer))
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocPointer))
@@ -178,7 +195,9 @@ async function onLogoChange(event: Event) {
   }
   try {
     const url = await changeTeamLogo(teamId.value, file)
-    if (url && detail.value) detail.value.logoUrl = url
+    const cacheSafeUrl = url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : null
+    if (cacheSafeUrl && detail.value) detail.value.logoUrl = cacheSafeUrl
+    if (cacheSafeUrl) store.updateConversationAvatar(props.conversationId, cacheSafeUrl)
     pushToast({ tone: 'success', title: 'Logo updated', message: 'The team logo has been changed.' })
   } catch (err) {
     pushToast({
@@ -192,21 +211,23 @@ async function onLogoChange(event: Event) {
 }
 
 function editDetails() {
-  // Edit-details flow reuses the Add Team form shape; surfaced separately.
-  pushToast({
-    tone: 'success',
-    title: 'Edit team details',
-    message: 'Opening the team details editor is wired through the team settings flow.'
-  })
+  settingsOpen.value = false
+  openTeamDetail('teammates')
 }
 
 async function doArchive() {
   if (!teamId.value) return
+  const nextArchived = !(conversation.value?.isArchived ?? false)
   try {
-    await archiveTeam(teamId.value)
-    pushToast({ tone: 'success', title: 'Team archived', message: `${teamTitle.value} was archived.` })
+    const archived = await archiveTeam(teamId.value, nextArchived)
+    store.markConversationArchived(props.conversationId, archived)
+    pushToast({
+      tone: 'success',
+      title: archived ? 'Team archived' : 'Team unarchived',
+      message: `${teamTitle.value} was ${archived ? 'archived' : 'unarchived'}.`
+    })
   } catch (err) {
-    pushToast({ tone: 'warning', title: 'Could not archive', message: err instanceof Error ? err.message : 'Please try again.' })
+    pushToast({ tone: 'warning', title: 'Could not update archive status', message: err instanceof Error ? err.message : 'Please try again.' })
   }
 }
 
@@ -224,6 +245,7 @@ async function doExit() {
   if (!teamId.value) return
   try {
     await leaveTeam(teamId.value)
+    store.removeConversation(props.conversationId)
     pushToast({ tone: 'success', title: 'Left team', message: `You left ${teamTitle.value}.` })
   } catch (err) {
     pushToast({ tone: 'warning', title: 'Could not leave', message: err instanceof Error ? err.message : 'Please try again.' })
@@ -235,6 +257,11 @@ const inviteOpen = ref(false)
 function openInvite() {
   if (!teamId.value) return
   inviteOpen.value = true
+}
+
+async function onInviteSent() {
+  await loadTeamMembers(true)
+  await loadDetail(true)
 }
 
 const router = useRouter()
@@ -257,10 +284,28 @@ function openStatistics() {
 // ── Collapsible rows + shared files ──────────────────────────────
 const openTeammates = ref(false)
 const openFiles = ref(false)
+const teamMembers = ref<ChatTeamMember[]>([])
+const membersLoaded = ref(false)
+const membersLoading = ref(false)
+const memberBusyId = ref('')
 
 const sharedFiles = ref<ChatSharedFile[]>([])
 const filesLoaded = ref(false)
 const filesLoading = ref(false)
+
+async function loadTeamMembers(force = false) {
+  if (!teamId.value || membersLoading.value) return
+  if (membersLoaded.value && !force) return
+  membersLoading.value = true
+  try {
+    teamMembers.value = await fetchTeamMembers(teamId.value, { includeInvites: true })
+    membersLoaded.value = true
+  } catch (err) {
+    console.warn('[chat] fetchTeamMembers failed', err)
+  } finally {
+    membersLoading.value = false
+  }
+}
 
 async function loadSharedFiles() {
   if (filesLoaded.value || filesLoading.value) return
@@ -281,12 +326,141 @@ function toggleFiles() {
   if (openFiles.value) void loadSharedFiles()
 }
 
+function toggleTeammates() {
+  openTeammates.value = !openTeammates.value
+  if (openTeammates.value) void loadTeamMembers()
+}
+
 const sharedFilesCount = computed(() =>
   filesLoaded.value ? sharedFiles.value.length : counts.value.sharedFiles
 )
+function dedupeMembers(rows: ChatTeamMember[]): ChatTeamMember[] {
+  const seen = new Set<string>()
+  return rows.filter((m) => {
+    const key = m.userId ? `user:${m.userId}` : (m.userChatId ? `chat:${m.userChatId}` : `invite:${m.inviteId || m.memberId || m.name}`)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const visibleTeamMembers = computed<ChatTeamMember[]>(() => {
+  if (membersLoaded.value) return dedupeMembers(teamMembers.value)
+  return dedupeMembers(participants.value.map((p) => ({
+    memberId: null,
+    userChatId: p.userChatId,
+    userId: p.userId,
+    userIdFirebase: p.userChatId,
+    name: p.name,
+    email: null,
+    avatarUrl: p.avatarUrl,
+    role: p.role,
+    isAdmin: p.role === 'admin',
+    isFan: false,
+    isPlayer: p.role !== 'admin',
+    isInvitationPending: false,
+    inviteId: null,
+    inviteTarget: null,
+    inviteTargetType: null,
+    inviteStatus: null,
+    uniformNo: null
+  })))
+})
+
 const teammatesCount = computed(() =>
-  detail.value ? counts.value.teammates : participants.value.length
+  membersLoaded.value ? visibleTeamMembers.value.length : (detail.value ? counts.value.teammates : participants.value.length)
 )
+
+const existingMemberChatIds = computed(() =>
+  [...new Set(visibleTeamMembers.value.map((m) => m.userChatId).filter(Boolean))]
+)
+const myChatId = computed(() => getAuthUserChatId())
+
+function memberKey(member: ChatTeamMember): string {
+  return member.memberId || member.userChatId || member.userId || member.inviteId || member.name
+}
+
+function toggleMemberMenu(member: ChatTeamMember) {
+  const key = memberKey(member)
+  memberMenuId.value = memberMenuId.value === key ? null : key
+}
+
+function canManageMember(member: ChatTeamMember): boolean {
+  if (!isAdmin.value) return false
+  if (member.isInvitationPending) return false
+  return !!member.userChatId && member.userChatId !== myChatId.value
+}
+
+function memberRoleValue(member: ChatTeamMember): 'admin' | 'teammate' | 'fan' {
+  if (member.isAdmin || member.role === 'admin') return 'admin'
+  if (member.isFan || member.role === 'fan') return 'fan'
+  return 'teammate'
+}
+
+async function changeMemberRole(member: ChatTeamMember, role: 'admin' | 'teammate' | 'fan') {
+  if (!teamId.value || !member.userId) return
+  memberBusyId.value = member.memberId || member.userChatId || member.userId
+  try {
+    await updateTeamMemberRole(teamId.value, {
+      userId: member.userId,
+      userIdFirebase: member.userIdFirebase
+    }, {
+      role,
+      markAsPlayer: role === 'teammate' ? member.isPlayer : false
+    })
+    await loadTeamMembers(true)
+    await loadDetail(true)
+    pushToast({ tone: 'success', title: 'Member updated' })
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not update member', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
+
+function onMemberRoleChange(member: ChatTeamMember, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'admin' || value === 'teammate' || value === 'fan') {
+    void changeMemberRole(member, value)
+  }
+}
+
+async function toggleMemberPlayer(member: ChatTeamMember, isPlayer: boolean) {
+  const role = memberRoleValue(member)
+  if (!teamId.value || !member.userId || role === 'fan') return
+  memberBusyId.value = member.memberId || member.userChatId || member.userId
+  try {
+    await updateTeamMemberRole(teamId.value, {
+      userId: member.userId,
+      userIdFirebase: member.userIdFirebase
+    }, { role, markAsPlayer: isPlayer })
+    await loadTeamMembers(true)
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not update player status', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
+
+function onMemberPlayerChange(member: ChatTeamMember, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  void toggleMemberPlayer(member, checked)
+}
+
+async function removeMember(member: ChatTeamMember) {
+  if (!teamId.value || !member.userChatId) return
+  memberBusyId.value = member.memberId || member.userChatId
+  try {
+    await removeTeamMember(teamId.value, member.userChatId)
+    await loadTeamMembers(true)
+    await loadDetail(true)
+    pushToast({ tone: 'success', title: 'Member removed' })
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not remove member', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
 
 // Reset cached state when switching conversation; (re)load team detail.
 watch(
@@ -297,7 +471,12 @@ watch(
     openTeammates.value = false
     openFiles.value = false
     settingsOpen.value = false
+    teamMembers.value = []
+    membersLoaded.value = false
+    memberBusyId.value = ''
     detail.value = null
+    detailLoadedTeamId.value = ''
+    memberMenuId.value = null
     void loadDetail()
   },
   { immediate: true }
@@ -318,7 +497,7 @@ watch(teamId, () => {
       </button>
     </header>
 
-    <div class="info-panel__scroll">
+    <div ref="scrollRef" class="info-panel__scroll">
       <!-- Profile block -->
       <div class="info-panel__profile">
         <span class="info-panel__avatar">
@@ -380,7 +559,7 @@ watch(teamId, () => {
           <!-- Settings dropdown menu -->
           <div v-if="settingsOpen" class="info-panel__menu" role="menu">
           <button type="button" class="info-action" @click="toggleConvLock">
-            <span class="info-action__label">{{ convLocked ? 'Unlock this chat' : 'Lock this chat' }}</span>
+            <span class="info-action__label">{{ convHasLock ? 'Remove chat lock' : 'Lock this chat' }}</span>
             <span class="info-action__chevron">›</span>
           </button>
           <input
@@ -433,7 +612,7 @@ watch(teamId, () => {
           </div>
 
           <button type="button" class="info-action" @click="doArchive">
-            <span class="info-action__label">Archive Team</span>
+            <span class="info-action__label">{{ conversation?.isArchived ? 'Unarchive Team' : 'Archive Team' }}</span>
             <span class="info-action__chevron">›</span>
           </button>
           <button type="button" class="info-action info-action--danger" @click="doReport">
@@ -488,18 +667,79 @@ watch(teamId, () => {
             type="button"
             class="info-row"
             :aria-expanded="openTeammates"
-            @click="openTeammates = !openTeammates"
+            @click="toggleTeammates"
           >
             <span class="info-row__label">Teammates</span>
             <span class="info-row__count">{{ teammatesCount }}</span>
             <span class="info-row__chevron" :class="{ 'info-row__chevron--open': openTeammates }">›</span>
           </button>
           <ul v-if="openTeammates" class="info-row__sub">
-            <li v-for="p in participants" :key="p.userChatId" class="teammate">
-              <TeamAvatar :name="p.name" :image-url="p.avatarUrl ?? undefined" size="sm" />
-              <span class="teammate__name">{{ p.name }}</span>
-              <span v-if="p.role === 'admin'" class="teammate__role">Admin</span>
-            </li>
+            <li v-if="membersLoading" class="info-row__hint">Loading...</li>
+            <li v-else-if="!visibleTeamMembers.length" class="info-row__hint">No teammates yet.</li>
+            <template v-else>
+              <li v-for="member in visibleTeamMembers" :key="member.memberId || member.userChatId || member.inviteId || member.name" class="teammate">
+                <TeamAvatar :name="member.name" :image-url="member.avatarUrl ?? undefined" size="sm" />
+                <span class="teammate__main">
+                  <span class="teammate__name" :title="member.name">{{ member.name }}</span>
+                  <span v-if="member.isInvitationPending" class="teammate__sub">
+                    Pending{{ member.inviteTarget ? `: ${member.inviteTarget}` : '' }}
+                  </span>
+                  <span v-else-if="member.email" class="teammate__sub">{{ member.email }}</span>
+                </span>
+                <span v-if="!canManageMember(member)" class="teammate__role">
+                  {{ member.isInvitationPending ? 'Pending' : (memberRoleValue(member) === 'teammate' ? 'Teammate' : memberRoleValue(member)) }}
+                </span>
+                <div v-else class="teammate__actions" @click.stop>
+                  <button
+                    type="button"
+                    class="teammate__menu-btn"
+                    :class="{ 'is-active': memberMenuId === memberKey(member) }"
+                    :aria-expanded="memberMenuId === memberKey(member) ? 'true' : 'false'"
+                    aria-label="Member actions"
+                    @click="toggleMemberMenu(member)"
+                  >
+                    <AppIcon name="ellipsis" :size="16" />
+                  </button>
+                  <div v-if="memberMenuId === memberKey(member)" class="teammate__menu">
+                    <label class="teammate__menu-field">
+                      <span>Role</span>
+                      <select
+                        class="teammate__select"
+                        :value="memberRoleValue(member)"
+                        :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
+                        aria-label="Member role"
+                        @change="onMemberRoleChange(member, $event)"
+                      >
+                        <option value="teammate">Teammate</option>
+                        <option value="fan">Fan</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+                    <label
+                      v-if="memberRoleValue(member) !== 'fan'"
+                      class="teammate__player"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="member.isPlayer"
+                        :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
+                        @change="onMemberPlayerChange(member, $event)"
+                      />
+                      Player
+                    </label>
+                    <button
+                      type="button"
+                      class="teammate__remove"
+                      :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
+                      @click="removeMember(member)"
+                    >
+                      <AppIcon name="close" :size="14" />
+                      <span>Remove member</span>
+                    </button>
+                  </div>
+                </div>
+              </li>
+            </template>
           </ul>
 
           <button
@@ -532,7 +772,7 @@ watch(teamId, () => {
       <template v-else>
         <div class="info-panel__rows">
           <button type="button" class="info-row" @click="toggleConvLock">
-            <span class="info-row__label">{{ convLocked ? 'Unlock this chat' : 'Lock this chat' }}</span>
+            <span class="info-row__label">{{ convHasLock ? 'Remove chat lock' : 'Lock this chat' }}</span>
             <span class="info-row__chevron">›</span>
           </button>
           <button
@@ -569,6 +809,8 @@ watch(teamId, () => {
       :team-id="teamId"
       :team-name="teamTitle"
       :team-logo-url="logoUrl ?? null"
+      :excluded-user-chat-ids="existingMemberChatIds"
+      @sent="onInviteSent"
     />
   </aside>
 </template>
@@ -714,15 +956,11 @@ watch(teamId, () => {
 
 /* Settings dropdown menu (anchored under the actions row) */
 .info-panel__menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 20;
+  position: static;
   display: flex;
   flex-direction: column;
-  max-height: 60vh;
-  overflow-y: auto;
+  margin-top: 8px;
+  overflow: visible;
   padding: 4px 12px;
   border-radius: 12px;
   background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
@@ -922,12 +1160,18 @@ html.dark-mode .event-card__badge {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 4px;
+  padding: 8px 4px;
+}
+
+.teammate__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .teammate__name {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -936,10 +1180,123 @@ html.dark-mode .event-card__badge {
   font-weight: 400;
 }
 
+.teammate__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-light, #787f8d);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
 .teammate__role {
+  flex: 0 0 auto;
   color: var(--secondary, #2f5f98);
   font-size: 0.72rem;
   font-weight: 500;
+  text-transform: capitalize;
+}
+
+.teammate__actions {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.teammate__menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-light, #787f8d);
+  cursor: pointer;
+}
+
+.teammate__menu-btn:hover,
+.teammate__menu-btn.is-active {
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+  color: var(--primary, #2d8cf0);
+}
+
+.teammate__menu {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  z-index: 8;
+  display: flex;
+  min-width: 178px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 10px;
+  background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
+  box-shadow: var(--shadow, 0 10px 24px rgba(36, 60, 91, 0.18));
+}
+
+.teammate__menu-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-light, #787f8d);
+  font-size: 0.72rem;
+}
+
+.teammate__select {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: var(--radius-md, 5px);
+  background: var(--surface-card, #fff);
+  color: var(--text, #2e3137);
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  outline: none;
+}
+
+.teammate__player {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-light, #787f8d);
+  font-size: 0.72rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.teammate__player input {
+  width: 14px;
+  height: 14px;
+}
+
+.teammate__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  width: 100%;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #c1413a;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.teammate__remove:hover {
+  background: var(--danger-light, rgba(193, 65, 58, 0.1));
+}
+
+.teammate__remove:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .shared-file {

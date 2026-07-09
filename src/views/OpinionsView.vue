@@ -28,6 +28,7 @@ import PostComposer from '../components/opinions/PostComposer.vue'
 import PostLikersModal from '../components/opinions/PostLikersModal.vue'
 import { formatRelativeTime } from '../components/opinions/relative-time'
 import { pushToast } from '../toast-center'
+import { confirmDialog } from '../confirm-center'
 
 const FEED_LIMIT = 8
 const SPECIALIST_LIMIT = 5
@@ -48,6 +49,9 @@ const expandedComments = ref<Set<string>>(new Set())
 const likeBusyIds = ref<Set<string>>(new Set())
 const mutationBusyIds = ref<Set<string>>(new Set())
 const selectedLikersPost = ref<OpinionPost | null>(null)
+const specialistMenuId = ref<string | null>(null)
+const editingSpecialistId = ref<string | null>(null)
+const specialistDraft = ref('')
 const feedSentinel = ref<HTMLElement | null>(null)
 // Facebook-style: scrolling back to the top auto-loads newer posts (no button).
 const topSentinel = ref<HTMLElement | null>(null)
@@ -330,11 +334,52 @@ function onCommentCreated(postId: string, _comment: OpinionComment) {
   }))
 }
 
+function closeSpecialistMenu() {
+  specialistMenuId.value = null
+}
+
+function toggleSpecialistMenu(postId: string) {
+  specialistMenuId.value = specialistMenuId.value === postId ? null : postId
+}
+
+function startSpecialistEdit(post: OpinionPost) {
+  specialistDraft.value = post.content
+  editingSpecialistId.value = post.id
+  specialistMenuId.value = null
+}
+
+function cancelSpecialistEdit() {
+  editingSpecialistId.value = null
+  specialistDraft.value = ''
+}
+
+async function saveSpecialistEdit(post: OpinionPost) {
+  const content = specialistDraft.value.trim()
+  if (!content || content === post.content) {
+    cancelSpecialistEdit()
+    return
+  }
+  editingSpecialistId.value = null
+  await savePost(post, content)
+}
+
+async function removeSpecialistPost(post: OpinionPost) {
+  specialistMenuId.value = null
+  if (!(await confirmDialog({
+    title: 'Delete this post?',
+    message: 'This specialist post will be permanently removed.',
+    confirmLabel: 'Delete',
+    danger: true
+  }))) return
+  await removePost(post)
+}
+
 onMounted(async () => {
   if (!isAuthenticated.value) {
     redirectToLogin()
     return
   }
+  document.addEventListener('click', closeSpecialistMenu)
   await loadCurrentUser()
   if (!isAuthenticated.value) return
   await Promise.all([loadPosts(true), loadSpecialists(true)])
@@ -349,6 +394,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   observer?.disconnect()
   topObserver?.disconnect()
+  document.removeEventListener('click', closeSpecialistMenu)
 })
 
 watch(nextCursor, async () => {
@@ -486,9 +532,38 @@ watch(isAuthenticated, (authenticated) => {
               <h3>{{ post.author.name }}</h3>
               <time :datetime="post.createdAt">{{ formatRelativeTime(post.createdAt) }}</time>
             </div>
+            <div v-if="post.isMine" class="opinions-specialist-card__menu" @click.stop>
+              <button
+                type="button"
+                class="opinions-specialist-card__menu-btn"
+                :class="{ 'is-active': specialistMenuId === post.id }"
+                aria-label="Specialist post menu"
+                :aria-expanded="specialistMenuId === post.id ? 'true' : 'false'"
+                @click="toggleSpecialistMenu(post.id)"
+              >
+                <AppIcon name="ellipsis" :size="16" />
+              </button>
+              <div v-if="specialistMenuId === post.id" class="opinions-specialist-card__popover">
+                <button type="button" @click="startSpecialistEdit(post)">
+                  <AppIcon name="text" :size="15" />
+                  <span>Edit post</span>
+                </button>
+                <button type="button" class="is-danger" @click="removeSpecialistPost(post)">
+                  <AppIcon name="close" :size="15" />
+                  <span>Delete post</span>
+                </button>
+              </div>
+            </div>
             <span class="opinions-specialist-card__tag"><AppIcon name="award" :size="13" /></span>
           </header>
-          <p v-if="post.content">{{ post.content }}</p>
+          <div v-if="editingSpecialistId === post.id" class="opinions-specialist-card__editor">
+            <textarea v-model="specialistDraft" rows="3" :disabled="mutationBusyIds.has(post.id)"></textarea>
+            <div>
+              <button type="button" :disabled="mutationBusyIds.has(post.id)" @click="cancelSpecialistEdit">Cancel</button>
+              <button type="button" :disabled="mutationBusyIds.has(post.id) || !specialistDraft.trim()" @click="saveSpecialistEdit(post)">Save</button>
+            </div>
+          </div>
+          <p v-else-if="post.content">{{ post.content }}</p>
           <div v-if="post.images[0]" class="opinions-specialist-card__media">
             <img :src="post.images[0]" alt="Specialist post image" loading="lazy" />
           </div>
@@ -946,9 +1021,73 @@ watch(isAuthenticated, (authenticated) => {
 
 .opinions-specialist-card header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
+}
+
+.opinions-specialist-card__menu {
+  position: relative;
+}
+
+.opinions-specialist-card__menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+}
+
+.opinions-specialist-card__menu-btn:hover,
+.opinions-specialist-card__menu-btn.is-active {
+  background: var(--surface-pill);
+  color: var(--primary);
+}
+
+.opinions-specialist-card__popover {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 6;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--border-divider);
+  border-radius: 10px;
+  background: var(--surface-opaque);
+  box-shadow: var(--shadow);
+}
+
+.opinions-specialist-card__popover button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.opinions-specialist-card__popover button:hover {
+  background: var(--surface-pill);
+}
+
+.opinions-specialist-card__popover button.is-danger {
+  color: var(--highlight);
+}
+
+.opinions-specialist-card__popover button.is-danger:hover {
+  background: var(--danger-light);
 }
 
 .opinions-specialist-card__tag {
@@ -988,6 +1127,55 @@ watch(isAuthenticated, (authenticated) => {
   line-height: 1.38;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+}
+
+.opinions-specialist-card__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.opinions-specialist-card__editor textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--border-divider);
+  border-radius: 10px;
+  background: var(--surface-opaque);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  padding: 9px 10px;
+}
+
+.opinions-specialist-card__editor div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.opinions-specialist-card__editor button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-divider);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--secondary);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.opinions-specialist-card__editor button:last-child {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.opinions-specialist-card__editor button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .opinions-specialist-card img {

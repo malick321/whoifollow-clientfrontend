@@ -147,6 +147,7 @@ interface ChatStoreState {
   connected: boolean
   loadingConversations: boolean
   loadingOlderByConversation: Record<string, boolean>
+  openingConversationIds: Record<string, boolean>
   /** Message ids the viewer hid via "Delete for me" — persisted in IndexedDB,
    *  loaded on connect, and filtered out everywhere messages are surfaced. */
   hiddenMessageIds: Set<string>
@@ -216,6 +217,7 @@ export const useChatStore = defineStore('chat', {
     connected: false,
     loadingConversations: false,
     loadingOlderByConversation: {},
+    openingConversationIds: {},
     hiddenMessageIds: new Set<string>()
   }),
 
@@ -433,6 +435,29 @@ export const useChatStore = defineStore('chat', {
       void cacheConversations([conv])
     },
 
+    markConversationArchived(id: string, archived = true) {
+      const conv = this.conversationById(id)
+      if (!conv) return
+      conv.isArchived = archived
+      if (this.activeConversationId === id && archived) this.closeConversation(id)
+      void cacheConversations([conv])
+    },
+
+    updateConversationAvatar(id: string, avatarUrl: string | null) {
+      const conv = this.conversationById(id)
+      if (!conv) return
+      conv.avatarUrl = avatarUrl
+      if (conv.team) conv.team.avatarUrl = avatarUrl
+      void cacheConversations([conv])
+    },
+
+    removeConversation(id: string) {
+      const idx = this.conversations.findIndex((c) => c.id === id)
+      if (idx >= 0) this.conversations.splice(idx, 1)
+      if (this.activeConversationId === id) this.closeConversation(id)
+      delete this.messagesByConversation[id]
+    },
+
     async openIndividualConversation(userChatId: string): Promise<string | null> {
       const conv = await getOrCreateIndividualConversation(userChatId)
       if (!conv) return null
@@ -444,37 +469,47 @@ export const useChatStore = defineStore('chat', {
     // ── Open / history ──────────────────────────────────────────────────────
 
     async openConversation(id: string) {
+      if (this.activeConversationId === id && this.messagesByConversation[id]?.length) {
+        this.markConversationRead(id)
+        return
+      }
+      if (this.openingConversationIds[id]) return
+      this.openingConversationIds[id] = true
       this.activeConversationId = id
 
-      if (socket && socket.connected) {
-        socket.emit('join-conversation', roomFor(id))
-      }
-
-      // Cache-first: render cached tail instantly (minus hidden ids).
-      const cached = await getCachedMessages(id, CACHE_RENDER_LIMIT)
-      const visibleCached = this.hiddenMessageIds.size
-        ? cached.filter((m) => !this.hiddenMessageIds.has(m.id))
-        : cached
-      if (visibleCached.length && !this.messagesByConversation[id]?.length) {
-        this.messagesByConversation[id] = visibleCached
-      }
-
-      // Then fetch the latest page.
       try {
-        const page = await fetchMessages(id, { limit: HISTORY_PAGE_SIZE })
-        this.mergeMessages(id, page.messages)
-        this.cursorByConversation[id] = page.nextCursor
-        this.hasMoreByConversation[id] = page.hasMore
-        void cacheMessages(id, page.messages)
-      } catch (err) {
-        console.warn('[chat] openConversation fetch failed', err)
+        if (socket && socket.connected) {
+          socket.emit('join-conversation', roomFor(id))
+        }
+
+        // Cache-first: render cached tail instantly (minus hidden ids).
+        const cached = await getCachedMessages(id, CACHE_RENDER_LIMIT)
+        const visibleCached = this.hiddenMessageIds.size
+          ? cached.filter((m) => !this.hiddenMessageIds.has(m.id))
+          : cached
+        if (visibleCached.length && !this.messagesByConversation[id]?.length) {
+          this.messagesByConversation[id] = visibleCached
+        }
+
+        // Then fetch the latest page.
+        try {
+          const page = await fetchMessages(id, { limit: HISTORY_PAGE_SIZE })
+          this.mergeMessages(id, page.messages)
+          this.cursorByConversation[id] = page.nextCursor
+          this.hasMoreByConversation[id] = page.hasMore
+          void cacheMessages(id, page.messages)
+        } catch (err) {
+          console.warn('[chat] openConversation fetch failed', err)
+        }
+
+        // Ensure participants are loaded (info panel + status derivation).
+        void this.ensureConversationDetail(id)
+
+        // Mark visible messages read.
+        this.markConversationRead(id)
+      } finally {
+        this.openingConversationIds[id] = false
       }
-
-      // Ensure participants are loaded (info panel + status derivation).
-      void this.ensureConversationDetail(id)
-
-      // Mark visible messages read.
-      this.markConversationRead(id)
     },
 
     closeConversation(id: string) {
@@ -733,6 +768,11 @@ export const useChatStore = defineStore('chat', {
       if (conv) conv.unreadCount = 0
 
       if (unreadIds.length === 0) return
+      for (const m of list) {
+        if (!unreadIds.includes(m.id)) continue
+        if (!m.readBy.includes(me)) m.readBy.push(me)
+        if (!m.deliveredTo.includes(me)) m.deliveredTo.push(me)
+      }
       if (socket && socket.connected) {
         socket.emit('mark-read-batch', { conversation_id: id, message_ids: unreadIds })
       }

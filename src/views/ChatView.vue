@@ -5,6 +5,7 @@ import ConversationList from '../components/chat/ConversationList.vue'
 import MessageThread from '../components/chat/MessageThread.vue'
 import ChatInfoPanel from '../components/chat/ChatInfoPanel.vue'
 import AddTeamModal from '../components/chat/AddTeamModal.vue'
+import StartChatModal from '../components/chat/StartChatModal.vue'
 import ChatLockScreen from '../components/chat/ChatLockScreen.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { useChatStore } from '../stores/chat'
@@ -19,6 +20,7 @@ const { activeConversationId } = storeToRefs(store)
 // a conversation is active (see the `v-if="activeId && showInfo"` gate below).
 const showInfo = ref(true)
 const addTeamOpen = ref(false)
+const startChatOpen = ref(false)
 
 const activeId = computed(() => activeConversationId.value)
 
@@ -57,9 +59,16 @@ function addTeam() {
   addTeamOpen.value = true
 }
 
-function onTeamCreated(conversation: ChatConversation) {
-  store.upsertConversation(conversation)
-  void store.openConversation(conversation.id)
+function startChat() {
+  startChatOpen.value = true
+}
+
+async function onTeamCreated(conversation: ChatConversation | null) {
+  if (conversation) {
+    store.upsertConversation(conversation)
+    await store.openConversation(conversation.id)
+  }
+  void store.loadConversations()
 }
 </script>
 
@@ -75,7 +84,7 @@ function onTeamCreated(conversation: ChatConversation) {
 
   <div v-else class="chat-view" :class="{ 'chat-view--thread': activeId, 'chat-view--info': showInfo }">
     <div class="chat-view__list">
-      <ConversationList @add-team="addTeam" />
+      <ConversationList @add-team="addTeam" @start-chat="startChat" />
     </div>
 
     <div class="chat-view__thread">
@@ -102,11 +111,12 @@ function onTeamCreated(conversation: ChatConversation) {
       </div>
     </div>
 
-    <div v-if="activeId && showInfo" class="chat-view__info">
+    <div v-if="activeId && showInfo && !activeConvLocked" class="chat-view__info">
       <ChatInfoPanel :conversation-id="activeId" @close="showInfo = false" />
     </div>
 
     <AddTeamModal v-model="addTeamOpen" @created="onTeamCreated" />
+    <StartChatModal v-model="startChatOpen" />
   </div>
 </template>
 
@@ -117,8 +127,8 @@ function onTeamCreated(conversation: ChatConversation) {
   /* Explicit viewport height so the 3-pane always fills the screen regardless
      of ancestor height — keeps the composer pinned to the bottom (no page
      scroll, no "message field below the fold"). `dvh` handles mobile chrome. */
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
   min-height: 0;
   overflow: hidden;
   background: var(--body-bg, #f5f7fb);
@@ -187,7 +197,7 @@ function onTeamCreated(conversation: ChatConversation) {
 
   .chat-view__info {
     position: fixed;
-    top: 0;
+    top: 56px;
     right: 0;
     bottom: 0;
     width: min(320px, 86vw);

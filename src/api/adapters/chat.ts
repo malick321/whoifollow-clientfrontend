@@ -90,12 +90,26 @@ export function adaptParticipant(raw: ApiParticipant): ChatParticipant {
 }
 
 export function adaptTeamMember(raw: ApiTeamMember): ChatTeamMember {
+  const isAdmin = !!raw.isAdmin || raw.role === 'admin'
+  const isFan = !!raw.isFan || raw.role === 'fan'
   return {
+    memberId: str(raw.memberId),
     userChatId: strOr(raw.userChatId),
     userId: str(raw.userId),
+    userIdFirebase: str(raw.userIdFirebase),
     name: raw.name ?? '',
+    email: raw.email ?? null,
     avatarUrl: raw.avatarUrl ?? null,
-    role: raw.role === 'admin' ? 'admin' : 'member'
+    role: isAdmin ? 'admin' : (isFan ? 'fan' : 'member'),
+    isAdmin,
+    isFan,
+    isPlayer: !!raw.isPlayer,
+    isInvitationPending: !!raw.isInvitationPending,
+    inviteId: str(raw.inviteId),
+    inviteTarget: raw.inviteTarget ?? null,
+    inviteTargetType: raw.inviteTargetType ?? null,
+    inviteStatus: raw.inviteStatus ?? null,
+    uniformNo: str(raw.uniformNo)
   }
 }
 

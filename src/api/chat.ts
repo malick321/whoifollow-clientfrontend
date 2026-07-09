@@ -31,6 +31,7 @@ import type {
   ApiTeamDetail,
   ApiTeamDetailResponse,
   ApiTeamInviteLinkResponse,
+  ApiTeamLogoResponse,
   ApiTeamMembersResponse,
   ApiTeamSettings,
   ApiTeamSettingsResponse,
@@ -136,11 +137,23 @@ export interface ChatSharedFile {
 }
 
 export interface ChatTeamMember {
+  memberId: string | null
   userChatId: string
   userId: string | null
+  userIdFirebase: string | null
   name: string
+  email: string | null
   avatarUrl: string | null
-  role: ChatParticipantRole
+  role: ChatParticipantRole | 'fan'
+  isAdmin: boolean
+  isFan: boolean
+  isPlayer: boolean
+  isInvitationPending: boolean
+  inviteId: string | null
+  inviteTarget: string | null
+  inviteTargetType: string | null
+  inviteStatus: string | null
+  uniformNo: string | null
 }
 
 export interface ChatConversationsPage {
@@ -198,6 +211,10 @@ function getHeaders(): Record<string, string> {
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json().catch(() => ({}))) as T
+}
+
+function responseMessage(env: { responseStatus?: { message?: string }; message?: string } | null | undefined, fallback: string): string {
+  return env?.responseStatus?.message || env?.message || fallback
 }
 
 function adaptSharedFile(raw: ApiSharedFile): ChatSharedFile {
@@ -593,12 +610,19 @@ export async function searchConversations(q: string): Promise<ChatConversationsP
 
 // ── 11. Team (group) management ───────────────────────────────────────────────
 
-export async function fetchTeamMembers(teamId: string): Promise<ChatTeamMember[]> {
+export async function fetchTeamMembers(
+  teamId: string,
+  opts: { includeInvites?: boolean } = {}
+): Promise<ChatTeamMember[]> {
+  const qs = buildQuery({ includeInvites: opts.includeInvites ? 1 : undefined })
   const response = await fetch(
-    buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/members`),
+    buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/members${qs}`),
     { headers: getHeaders() }
   )
   const env = await readJson<ApiTeamMembersResponse>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to load members (${response.status})`))
+  }
   return (env?.data?.members ?? []).map(adaptTeamMember)
 }
 
@@ -652,39 +676,93 @@ export async function updateTeam(
 
 export async function addTeamMembers(
   teamId: string,
-  userChatIds: string[]
+  userChatIds: string[],
+  options: { role?: ChatInviteRole | 'admin'; markAsPlayer?: boolean } = {}
 ): Promise<ChatTeamMember[]> {
   const response = await fetch(
     buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/members`),
-    { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ userChatIds }) }
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        userChatIds,
+        role: options.role,
+        markAsPlayer: options.markAsPlayer
+      })
+    }
   )
   const env = await readJson<ApiTeamMembersResponse>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to add members (${response.status})`))
+  }
   return (env?.data?.members ?? []).map(adaptTeamMember)
 }
 
+export async function updateTeamMemberRole(
+  teamId: string,
+  member: { userId: string; userIdFirebase?: string | null },
+  options: { role: ChatInviteRole | 'admin'; markAsPlayer?: boolean }
+): Promise<void> {
+  const isAdmin = options.role === 'admin'
+  const isFan = options.role === 'fan'
+  const response = await fetch(
+    buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/members`),
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        users: [{
+          userId: member.userId,
+          userIdFirebase: member.userIdFirebase ?? undefined,
+          admin: isAdmin ? 1 : 0,
+          fan: isFan ? 1 : 0,
+          isPlayer: isFan ? 0 : (options.markAsPlayer ? 1 : 0)
+        }]
+      })
+    }
+  )
+  const env = await readJson<ApiTeamMembersResponse>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to update member (${response.status})`))
+  }
+}
+
 export async function removeTeamMember(teamId: string, userChatId: string): Promise<void> {
-  await fetch(
+  const response = await fetch(
     buildV2ApiUrl(
       `/chat/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userChatId)}`
     ),
     { method: 'DELETE', headers: getHeaders() }
   )
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to remove member (${response.status})`))
+  }
 }
 
 export async function leaveTeam(teamId: string): Promise<void> {
-  await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/leave`), {
+  const response = await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/leave`), {
     method: 'POST',
     headers: jsonHeaders(),
     body: '{}'
   })
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to leave team (${response.status})`))
+  }
 }
 
-export async function archiveTeam(teamId: string): Promise<void> {
-  await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/archive`), {
+export async function archiveTeam(teamId: string, archived = true): Promise<boolean> {
+  const response = await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/archive`), {
     method: 'POST',
     headers: jsonHeaders(),
-    body: '{}'
+    body: JSON.stringify({ archived })
   })
+  const env = await readJson<{ responseStatus?: { message?: string }; data?: { isArchived?: boolean } | null }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to archive team (${response.status})`))
+  }
+  return !!env?.data?.isArchived
 }
 
 // ── 12. Team creation / detail / settings / invites ───────────────────────────
@@ -734,6 +812,9 @@ export async function createTeam(payload: CreateTeamPayload): Promise<CreateTeam
     body: form
   })
   const env = await readJson<ApiCreateTeamResponse>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to create team (${response.status})`))
+  }
   const conv = env?.data?.conversation
   return {
     conversation: conv ? adaptConversation(conv) : null,
@@ -883,11 +964,15 @@ export async function inviteTeamContact(
   teamId: string,
   payload: InviteTeamContactPayload
 ): Promise<void> {
-  await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/invite/contact`), {
+  const response = await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/invite/contact`), {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify(payload)
   })
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to send invite (${response.status})`))
+  }
 }
 
 export interface InviteTeamFriendsPayload {
@@ -901,11 +986,15 @@ export async function inviteTeamFriends(
   teamId: string,
   payload: InviteTeamFriendsPayload
 ): Promise<void> {
-  await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/invite/friends`), {
+  const response = await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/invite/friends`), {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify(payload)
   })
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to add friends (${response.status})`))
+  }
 }
 
 export interface EditTeamDetailsPayload {
@@ -930,13 +1019,16 @@ export async function editTeamDetails(
 /** Replace the team's avatar/logo. Multipart. */
 export async function changeTeamLogo(teamId: string, file: File): Promise<string | null> {
   const form = new FormData()
-  form.append('avatar', file)
+  form.append('image', file, file.name)
   const response = await fetch(
     buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/avatar`),
     { method: 'POST', headers: getHeaders(), body: form }
   )
-  const env = await readJson<ApiTeamInviteLinkResponse>(response)
-  return env?.data?.url ?? null
+  const env = await readJson<ApiTeamLogoResponse>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to change logo (${response.status})`))
+  }
+  return env?.data?.avatarUrl ?? env?.data?.url ?? env?.data?.urls?.[0] ?? null
 }
 
 /** Report a team (abuse / inappropriate content). */

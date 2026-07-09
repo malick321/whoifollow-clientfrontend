@@ -26,6 +26,8 @@ export interface ChatFriend {
 interface RawFriend {
   id?: number | string | null
   user_id?: number | string | null
+  chat_id?: string | null
+  user_id_firebase?: string | null
   fname?: string | null
   lname?: string | null
   user_name?: string | null
@@ -52,10 +54,11 @@ function buildName(raw: RawFriend): string {
 }
 
 function adaptFriend(raw: RawFriend): ChatFriend | null {
-  if (raw.id == null) return null
+  const chatId = raw.chat_id ?? raw.user_id_firebase ?? raw.id
+  if (chatId == null) return null
   return {
-    userChatId: String(raw.id),
-    userId: raw.user_id != null ? String(raw.user_id) : null,
+    userChatId: String(chatId),
+    userId: raw.user_id != null ? String(raw.user_id) : (raw.id != null ? String(raw.id) : null),
     name: buildName(raw),
     avatarUrl: buildUserAvatarUrl(raw.profile_avatar ?? undefined) ?? null
   }
@@ -69,9 +72,16 @@ export async function fetchFriends(search = ''): Promise<ChatFriend[]> {
     const qs = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '?search='
     const payload = await getLegacyJson<FriendListEnvelope>(`/friends/friendList${qs}`)
     const rows = payload?.data?.friends ?? []
+    const seen = new Set<string>()
     return rows
       .map(adaptFriend)
       .filter((friend): friend is ChatFriend => friend !== null)
+      .filter((friend) => {
+        const key = friend.userId ? `user:${friend.userId}` : `chat:${friend.userChatId}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
   } catch (error) {
     if (typeof console !== 'undefined') {
       console.warn('[friends] fetchFriends failed — returning empty list', error)

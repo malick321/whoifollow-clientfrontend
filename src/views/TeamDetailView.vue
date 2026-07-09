@@ -50,8 +50,9 @@ function viewPlayerStats(userId: string | null | undefined) {
 }
 function closeMemberMenu() { openMemberMenu.value = null }
 
-// Header actions — Message Team / Settings live in the chat surface.
+// Header actions.
 function goToChat() { router.push({ name: 'chat' }) }
+function openTeamSettings() { setTab('teammates') }
 
 const detail = ref<ChatTeamDetail | null>(null)
 const association = ref<TeamAssociation | null>(null)
@@ -241,7 +242,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
           <button type="button" class="td-hero-btn" @click="goToChat">
             <AppIcon name="message" :size="14" /> Message Team
           </button>
-          <button type="button" class="td-hero-btn" @click="goToChat">Settings</button>
+          <button type="button" class="td-hero-btn" @click="openTeamSettings">Settings</button>
         </div>
         <div class="team-detail__record">
           <template v-if="loadingHeader">

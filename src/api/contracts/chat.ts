@@ -118,11 +118,23 @@ export interface ApiSharedFile {
 }
 
 export interface ApiTeamMember {
+  memberId?: string | number | null
   userChatId: string
   userId: string | null
+  userIdFirebase?: string | null
   name: string | null
+  email?: string | null
   avatarUrl: string | null
-  role: 'admin' | 'member' | string | null
+  role: 'admin' | 'member' | 'fan' | string | null
+  isAdmin?: boolean | null
+  isFan?: boolean | null
+  isPlayer?: boolean | null
+  isInvitationPending?: boolean | null
+  inviteId?: string | number | null
+  inviteTarget?: string | null
+  inviteTargetType?: string | null
+  inviteStatus?: string | null
+  uniformNo?: string | number | null
 }
 
 // ── Envelopes ─────────────────────────────────────────────────────────────
@@ -296,6 +308,15 @@ export interface ApiTeamInviteLinkResponse {
   responseStatus?: ApiResponseStatus
   data?: {
     url?: string | null
+  } | null
+}
+
+export interface ApiTeamLogoResponse {
+  responseStatus?: ApiResponseStatus
+  data?: {
+    avatarUrl?: string | null
+    url?: string | null
+    urls?: string[] | null
   } | null
 }
 

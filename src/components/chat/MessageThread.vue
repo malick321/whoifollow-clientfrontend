@@ -119,6 +119,11 @@ function onDeleteForMe(m: ChatMessage) {
   store.deleteForMe(props.conversationId, m.id)
 }
 
+function onComposerSent() {
+  replyTo.value = null
+  scrollToBottom()
+}
+
 // ── Message Info modal ───────────────────────────────────────────────────
 const infoOpen = ref(false)
 const infoMessage = ref<ChatMessage | null>(null)
@@ -281,7 +286,7 @@ onBeforeUnmount(() => {
       :recipient-name="conversation?.title"
       :reply-to="replyTo"
       @cancel-reply="replyTo = null"
-      @sent="replyTo = null"
+      @sent="onComposerSent"
     />
   </section>
 </template>

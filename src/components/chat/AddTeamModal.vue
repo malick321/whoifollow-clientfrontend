@@ -36,7 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'created', conversation: ChatConversation): void
+  (e: 'created', conversation: ChatConversation | null): void
 }>()
 
 // ── Form state ───────────────────────────────────────────────────
@@ -90,7 +90,7 @@ function onCityInput() {
   citySearching.value = true
   const seq = ++citySeq
   cityDebounce = setTimeout(() => {
-    void searchPlacePredictions(q, { types: ['(cities)'] }).then((rows) => {
+    void searchPlacePredictions(q).then((rows) => {
       if (seq !== citySeq) return
       cityPredictions.value = rows
       citySearching.value = false
@@ -105,7 +105,8 @@ async function pickPlace(p: PlacePrediction) {
   city.value = place.city || ''
   state.value = place.state || ''
   cityStateQuery.value =
-    city.value && state.value ? `${city.value}, ${state.value}` : (place.city || p.primaryText)
+    place.formattedAddress ||
+    (city.value && state.value ? `${city.value}, ${state.value}` : (place.city || p.primaryText))
 }
 
 // ── Catalogues ───────────────────────────────────────────────────
@@ -121,8 +122,11 @@ const friendsOpen = ref(false)
 let friendDebounce: ReturnType<typeof setTimeout> | null = null
 
 const filteredFriendResults = computed(() => {
-  const taken = new Set(selectedFriends.value.map((f) => f.userChatId))
-  return friendResults.value.filter((f) => !taken.has(f.userChatId))
+  const takenChatIds = new Set(selectedFriends.value.map((f) => f.userChatId))
+  const takenUserIds = new Set(selectedFriends.value.map((f) => f.userId).filter(Boolean))
+  return friendResults.value.filter((f) =>
+    !takenChatIds.has(f.userChatId) && !(f.userId && takenUserIds.has(f.userId))
+  )
 })
 
 async function loadFriends(search = '') {
@@ -141,7 +145,9 @@ function onFriendSearch() {
 }
 
 function addFriend(friend: ChatFriend) {
-  if (selectedFriends.value.some((f) => f.userChatId === friend.userChatId)) return
+  if (selectedFriends.value.some((f) =>
+    f.userChatId === friend.userChatId || (!!f.userId && f.userId === friend.userId)
+  )) return
   selectedFriends.value = [...selectedFriends.value, friend]
   friendQuery.value = ''
 }
@@ -254,8 +260,8 @@ async function submit() {
     }
     // sportName feeds the optimistic toast only — the backend resolves the id.
     const result = await createTeam(payload)
+    emit('created', result.conversation)
     if (result.conversation) {
-      emit('created', result.conversation)
       pushToast({
         tone: 'success',
         title: 'Team created',
@@ -412,7 +418,7 @@ async function submit() {
           @focus="cityOpen = true"
           @blur="cityOpen = false"
         />
-        <label for="add-team-citystate" class="floating-input__label">City, State</label>
+        <label for="add-team-citystate" class="floating-input__label">Address, City, State</label>
         <img class="places-google-icon" :src="googleG" alt="" aria-hidden="true" />
         <ul
           v-if="cityOpen && (citySearching || cityStateQuery.trim().length >= 2)"
