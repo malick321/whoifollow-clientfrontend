@@ -20,9 +20,11 @@ const enabled = computed(() => lock.enabled)
 const newPin = ref('')
 const confirmPin = ref('')
 // Change / disable flow
-const currentPin = ref('')
+const manageMode = ref<'change' | 'disable'>('change')
+const changeCurrentPin = ref('')
 const changeNewPin = ref('')
 const changeConfirm = ref('')
+const disablePin = ref('')
 const autoLock = ref(lock.autoLockMinutes)
 const busy = ref(false)
 const error = ref<string | null>(null)
@@ -42,9 +44,11 @@ function digits(v: string): string {
 function reset() {
   newPin.value = ''
   confirmPin.value = ''
-  currentPin.value = ''
+  manageMode.value = 'change'
+  changeCurrentPin.value = ''
   changeNewPin.value = ''
   changeConfirm.value = ''
+  disablePin.value = ''
   autoLock.value = lock.autoLockMinutes
   error.value = null
   busy.value = false
@@ -99,7 +103,7 @@ async function changePin() {
   }
   busy.value = true
   try {
-    const ok = await lock.changePin(digits(currentPin.value), np)
+    const ok = await lock.changePin(digits(changeCurrentPin.value), np)
     if (!ok) {
       error.value = 'Current PIN is incorrect.'
       return
@@ -113,9 +117,13 @@ async function changePin() {
 
 async function turnOff() {
   error.value = null
+  if (digits(disablePin.value).length < 4) {
+    error.value = 'Enter your current PIN.'
+    return
+  }
   busy.value = true
   try {
-    const ok = await lock.disable(digits(currentPin.value))
+    const ok = await lock.disable(digits(disablePin.value))
     if (!ok) {
       error.value = 'Current PIN is incorrect.'
       return
@@ -184,29 +192,64 @@ async function saveAutoLock() {
         <button type="button" class="secondary-button" @click="saveAutoLock">Save</button>
       </div>
 
-      <h3 class="lock-setup__head">Change PIN</h3>
-      <div class="floating-input">
-        <input id="lock-cur" v-model="currentPin" type="password" inputmode="numeric" maxlength="8"
-               class="floating-input__control" placeholder=" " @input="currentPin = digits(currentPin)" />
-        <label for="lock-cur" class="floating-input__label">Current PIN</label>
+      <h3 class="lock-setup__head">Lock options</h3>
+      <div class="lock-setup__tabs" role="tablist" aria-label="Chat lock actions">
+        <button
+          type="button"
+          class="lock-setup__tab"
+          :class="{ 'is-active': manageMode === 'change' }"
+          :aria-selected="manageMode === 'change'"
+          role="tab"
+          @click="manageMode = 'change'; error = null"
+        >
+          Change PIN
+        </button>
+        <button
+          type="button"
+          class="lock-setup__tab"
+          :class="{ 'is-active': manageMode === 'disable' }"
+          :aria-selected="manageMode === 'disable'"
+          role="tab"
+          @click="manageMode = 'disable'; error = null"
+        >
+          Turn off lock
+        </button>
       </div>
-      <div class="floating-input">
-        <input id="lock-cn" v-model="changeNewPin" type="password" inputmode="numeric" maxlength="8"
-               class="floating-input__control" placeholder=" " @input="changeNewPin = digits(changeNewPin)" />
-        <label for="lock-cn" class="floating-input__label">New PIN</label>
+
+      <template v-if="manageMode === 'change'">
+        <div class="floating-input">
+          <input id="lock-change-cur" v-model="changeCurrentPin" type="password" inputmode="numeric" maxlength="8"
+                 class="floating-input__control" placeholder=" " @input="changeCurrentPin = digits(changeCurrentPin)" />
+          <label for="lock-change-cur" class="floating-input__label">Current PIN</label>
+        </div>
+        <div class="floating-input">
+          <input id="lock-cn" v-model="changeNewPin" type="password" inputmode="numeric" maxlength="8"
+                 class="floating-input__control" placeholder=" " @input="changeNewPin = digits(changeNewPin)" />
+          <label for="lock-cn" class="floating-input__label">New PIN</label>
+        </div>
+        <div class="floating-input">
+          <input id="lock-cc" v-model="changeConfirm" type="password" inputmode="numeric" maxlength="8"
+                 class="floating-input__control" placeholder=" " @input="changeConfirm = digits(changeConfirm)" />
+          <label for="lock-cc" class="floating-input__label">Confirm new PIN</label>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="floating-input">
+          <input id="lock-disable-cur" v-model="disablePin" type="password" inputmode="numeric" maxlength="8"
+                 class="floating-input__control" placeholder=" " @input="disablePin = digits(disablePin)" />
+          <label for="lock-disable-cur" class="floating-input__label">Current PIN</label>
+        </div>
+      </template>
+
+      <div v-if="manageMode === 'change'" class="lock-setup__manage-actions">
+        <button type="button" class="secondary-button" :disabled="busy" @click="changePin">Change PIN</button>
       </div>
-      <div class="floating-input">
-        <input id="lock-cc" v-model="changeConfirm" type="password" inputmode="numeric" maxlength="8"
-               class="floating-input__control" placeholder=" " @input="changeConfirm = digits(changeConfirm)" />
-        <label for="lock-cc" class="floating-input__label">Confirm new PIN</label>
+      <div v-else class="lock-setup__manage-actions">
+        <button type="button" class="danger-light-button" :disabled="busy" @click="turnOff">Turn off lock</button>
       </div>
 
       <p v-if="error" class="lock-setup__error">{{ error }}</p>
-
-      <div class="lock-setup__manage-actions">
-        <button type="button" class="secondary-button" :disabled="busy" @click="changePin">Change PIN</button>
-        <button type="button" class="danger-light-button" :disabled="busy" @click="turnOff">Turn off lock</button>
-      </div>
     </section>
 
     <template #footer>
@@ -243,6 +286,31 @@ async function saveAutoLock() {
 }
 .lock-setup__grow {
   flex: 1 1 auto;
+}
+.lock-setup__tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface-raised, rgba(240, 246, 253, 0.65));
+}
+.lock-setup__tab {
+  min-height: 34px;
+  border: none;
+  border-radius: var(--radius-md, 5px);
+  background: transparent;
+  color: var(--text-light, #787f8d);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.lock-setup__tab.is-active {
+  background: var(--surface-card, #fff);
+  color: var(--primary, #2d8cf0);
+  box-shadow: var(--shadow-soft, 0 4px 12px rgba(36, 60, 91, 0.12));
 }
 .lock-setup__manage-actions {
   display: flex;

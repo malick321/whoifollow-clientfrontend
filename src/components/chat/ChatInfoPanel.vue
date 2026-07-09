@@ -24,6 +24,7 @@ import { useChatStore } from '../../stores/chat'
 import { useChatLockStore } from '../../stores/chatLock'
 import {
   archiveTeam,
+  cancelTeamInvite,
   changeTeamLogo,
   fetchSharedFiles,
   fetchTeamDetail,
@@ -31,14 +32,18 @@ import {
   leaveTeam,
   removeTeamMember,
   reportTeam,
+  resendTeamInvite,
   updateTeamMemberRole,
+  updateTeamInvite,
   updateTeamSettings,
+  type ChatInviteRole,
   type ChatSharedFile,
   type ChatTeamDetail,
   type ChatTeamMember,
   type ChatTeamSettings
 } from '../../api/chat'
 import { pushToast } from '../../toast-center'
+import { confirmDialog } from '../../confirm-center'
 
 const props = defineProps<{
   conversationId: string
@@ -391,6 +396,10 @@ function canManageMember(member: ChatTeamMember): boolean {
   return !!member.userChatId && member.userChatId !== myChatId.value
 }
 
+function canManageInvite(member: ChatTeamMember): boolean {
+  return isAdmin.value && member.isInvitationPending && !!member.inviteId
+}
+
 function memberRoleValue(member: ChatTeamMember): 'admin' | 'teammate' | 'fan' {
   if (member.isAdmin || member.role === 'admin') return 'admin'
   if (member.isFan || member.role === 'fan') return 'fan'
@@ -399,7 +408,7 @@ function memberRoleValue(member: ChatTeamMember): 'admin' | 'teammate' | 'fan' {
 
 async function changeMemberRole(member: ChatTeamMember, role: 'admin' | 'teammate' | 'fan') {
   if (!teamId.value || !member.userId) return
-  memberBusyId.value = member.memberId || member.userChatId || member.userId
+  memberBusyId.value = memberKey(member)
   try {
     await updateTeamMemberRole(teamId.value, {
       userId: member.userId,
@@ -428,7 +437,7 @@ function onMemberRoleChange(member: ChatTeamMember, event: Event) {
 async function toggleMemberPlayer(member: ChatTeamMember, isPlayer: boolean) {
   const role = memberRoleValue(member)
   if (!teamId.value || !member.userId || role === 'fan') return
-  memberBusyId.value = member.memberId || member.userChatId || member.userId
+  memberBusyId.value = memberKey(member)
   try {
     await updateTeamMemberRole(teamId.value, {
       userId: member.userId,
@@ -449,7 +458,7 @@ function onMemberPlayerChange(member: ChatTeamMember, event: Event) {
 
 async function removeMember(member: ChatTeamMember) {
   if (!teamId.value || !member.userChatId) return
-  memberBusyId.value = member.memberId || member.userChatId
+  memberBusyId.value = memberKey(member)
   try {
     await removeTeamMember(teamId.value, member.userChatId)
     await loadTeamMembers(true)
@@ -457,6 +466,74 @@ async function removeMember(member: ChatTeamMember) {
     pushToast({ tone: 'success', title: 'Member removed' })
   } catch (err) {
     pushToast({ tone: 'warning', title: 'Could not remove member', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
+
+async function changeInviteOptions(member: ChatTeamMember, role: ChatInviteRole, markAsPlayer: boolean) {
+  if (!teamId.value || !member.inviteId) return
+  memberBusyId.value = memberKey(member)
+  try {
+    await updateTeamInvite(teamId.value, member.inviteId, {
+      role,
+      markAsPlayer: role === 'teammate' ? markAsPlayer : false
+    })
+    await loadTeamMembers(true)
+    await loadDetail(true)
+    pushToast({ tone: 'success', title: 'Invite updated' })
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not update invite', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
+
+function onInviteRoleChange(member: ChatTeamMember, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'teammate' || value === 'fan') {
+    void changeInviteOptions(member, value, value === 'teammate' ? member.isPlayer : false)
+  }
+}
+
+function onInvitePlayerChange(member: ChatTeamMember, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  void changeInviteOptions(member, 'teammate', checked)
+}
+
+async function resendInvite(member: ChatTeamMember) {
+  if (!teamId.value || !member.inviteId) return
+  memberBusyId.value = memberKey(member)
+  try {
+    await resendTeamInvite(teamId.value, member.inviteId)
+    await loadTeamMembers(true)
+    pushToast({ tone: 'success', title: 'Invite resent' })
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not resend invite', message: err instanceof Error ? err.message : 'Please try again.' })
+  } finally {
+    memberBusyId.value = ''
+  }
+}
+
+async function cancelInvite(member: ChatTeamMember) {
+  if (!teamId.value || !member.inviteId) return
+  const ok = await confirmDialog({
+    title: 'Cancel invitation?',
+    message: member.inviteTarget ? `This will remove the pending invite for ${member.inviteTarget}.` : 'This will remove the pending invite.',
+    confirmLabel: 'Cancel invite',
+    danger: true
+  })
+  if (!ok) return
+
+  memberBusyId.value = memberKey(member)
+  try {
+    await cancelTeamInvite(teamId.value, member.inviteId)
+    memberMenuId.value = null
+    await loadTeamMembers(true)
+    await loadDetail(true)
+    pushToast({ tone: 'success', title: 'Invite cancelled' })
+  } catch (err) {
+    pushToast({ tone: 'warning', title: 'Could not cancel invite', message: err instanceof Error ? err.message : 'Please try again.' })
   } finally {
     memberBusyId.value = ''
   }
@@ -686,7 +763,7 @@ watch(teamId, () => {
                   </span>
                   <span v-else-if="member.email" class="teammate__sub">{{ member.email }}</span>
                 </span>
-                <span v-if="!canManageMember(member)" class="teammate__role">
+                <span v-if="!canManageMember(member) && !canManageInvite(member)" class="teammate__role">
                   {{ member.isInvitationPending ? 'Pending' : (memberRoleValue(member) === 'teammate' ? 'Teammate' : memberRoleValue(member)) }}
                 </span>
                 <div v-else class="teammate__actions" @click.stop>
@@ -706,13 +783,13 @@ watch(teamId, () => {
                       <select
                         class="teammate__select"
                         :value="memberRoleValue(member)"
-                        :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
-                        aria-label="Member role"
-                        @change="onMemberRoleChange(member, $event)"
+                        :disabled="memberBusyId === memberKey(member)"
+                        :aria-label="member.isInvitationPending ? 'Invite role' : 'Member role'"
+                        @change="member.isInvitationPending ? onInviteRoleChange(member, $event) : onMemberRoleChange(member, $event)"
                       >
                         <option value="teammate">Teammate</option>
                         <option value="fan">Fan</option>
-                        <option value="admin">Admin</option>
+                        <option v-if="!member.isInvitationPending" value="admin">Admin</option>
                       </select>
                     </label>
                     <label
@@ -722,19 +799,29 @@ watch(teamId, () => {
                       <input
                         type="checkbox"
                         :checked="member.isPlayer"
-                        :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
-                        @change="onMemberPlayerChange(member, $event)"
+                        :disabled="memberBusyId === memberKey(member)"
+                        @change="member.isInvitationPending ? onInvitePlayerChange(member, $event) : onMemberPlayerChange(member, $event)"
                       />
                       Player
                     </label>
                     <button
+                      v-if="member.isInvitationPending"
+                      type="button"
+                      class="teammate__menu-action"
+                      :disabled="memberBusyId === memberKey(member)"
+                      @click="resendInvite(member)"
+                    >
+                      <AppIcon name="message" :size="14" />
+                      <span>Resend invite</span>
+                    </button>
+                    <button
                       type="button"
                       class="teammate__remove"
-                      :disabled="memberBusyId === (member.memberId || member.userChatId || member.userId)"
-                      @click="removeMember(member)"
+                      :disabled="memberBusyId === memberKey(member)"
+                      @click="member.isInvitationPending ? cancelInvite(member) : removeMember(member)"
                     >
                       <AppIcon name="close" :size="14" />
-                      <span>Remove member</span>
+                      <span>{{ member.isInvitationPending ? 'Cancel invite' : 'Remove member' }}</span>
                     </button>
                   </div>
                 </div>
@@ -1288,6 +1375,33 @@ html.dark-mode .event-card__badge {
   font-family: var(--font-body);
   font-size: 0.78rem;
   cursor: pointer;
+}
+
+.teammate__menu-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: var(--radius-md, 5px);
+  background: var(--surface-card, #fff);
+  color: var(--secondary, #2f5f98);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.teammate__menu-action:hover {
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+  color: var(--primary, #2d8cf0);
+}
+
+.teammate__menu-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .teammate__remove:hover {

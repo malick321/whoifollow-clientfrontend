@@ -740,6 +740,56 @@ export async function removeTeamMember(teamId: string, userChatId: string): Prom
   }
 }
 
+export async function updateTeamInvite(
+  teamId: string,
+  inviteId: string,
+  options: { role: ChatInviteRole; markAsPlayer?: boolean }
+): Promise<void> {
+  const response = await fetch(
+    buildV2ApiUrl(
+      `/chat/teams/${encodeURIComponent(teamId)}/invites/${encodeURIComponent(inviteId)}`
+    ),
+    {
+      method: 'PATCH',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        role: options.role,
+        markAsPlayer: options.markAsPlayer ?? false
+      })
+    }
+  )
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to update invite (${response.status})`))
+  }
+}
+
+export async function resendTeamInvite(teamId: string, inviteId: string): Promise<void> {
+  const response = await fetch(
+    buildV2ApiUrl(
+      `/chat/teams/${encodeURIComponent(teamId)}/invites/${encodeURIComponent(inviteId)}/resend`
+    ),
+    { method: 'POST', headers: jsonHeaders(), body: '{}' }
+  )
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to resend invite (${response.status})`))
+  }
+}
+
+export async function cancelTeamInvite(teamId: string, inviteId: string): Promise<void> {
+  const response = await fetch(
+    buildV2ApiUrl(
+      `/chat/teams/${encodeURIComponent(teamId)}/invites/${encodeURIComponent(inviteId)}`
+    ),
+    { method: 'DELETE', headers: getHeaders() }
+  )
+  const env = await readJson<{ responseStatus?: { message?: string } }>(response)
+  if (!response.ok) {
+    throw new Error(responseMessage(env, `Failed to cancel invite (${response.status})`))
+  }
+}
+
 export async function leaveTeam(teamId: string): Promise<void> {
   const response = await fetch(buildV2ApiUrl(`/chat/teams/${encodeURIComponent(teamId)}/leave`), {
     method: 'POST',
