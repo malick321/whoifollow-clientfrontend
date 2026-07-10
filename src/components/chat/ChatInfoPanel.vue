@@ -4,8 +4,8 @@
 // Right-side details inspector for the active conversation.
 //   - TEAM: upgraded panel mirroring the legacy team info screen — logo /
 //     name / category / age-gender, Games/Won/Lost tiles, Invite / Statistics
-//     / Settings actions, a reveal-able Settings section (Change Logo, Edit
-//     Details, SMS + Push toggles, Show on-base %, Show top-5 avg, Archive,
+//     / Settings actions, a reveal-able Settings section (Edit Details,
+//     SMS + Push toggles, Show on-base %, Show top-5 avg, Archive,
 //     Report, Exit + created-by), the ongoing-event card, and All Events /
 //     Associations / Teammates / Shared Files rows with counts. Driven by
 //     fetchTeamDetail; setting toggles call updateTeamSettings optimistically.
@@ -15,6 +15,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import TeamAvatar from '../TeamAvatar.vue'
 import AppIcon from '../AppIcon.vue'
+import EditTeamModal from './EditTeamModal.vue'
 import PresenceDot from './PresenceDot.vue'
 import ToggleSwitch from '../../components/ToggleSwitch.vue'
 import InviteToTeamModal from './InviteToTeamModal.vue'
@@ -25,7 +26,6 @@ import { useChatLockStore } from '../../stores/chatLock'
 import {
   archiveTeam,
   cancelTeamInvite,
-  changeTeamLogo,
   fetchSharedFiles,
   fetchTeamDetail,
   fetchTeamMembers,
@@ -151,8 +151,8 @@ const eventDateLine = computed(() => {
 const settingsOpen = ref(false)
 const actionsWrap = ref<HTMLElement | null>(null)
 const scrollRef = ref<HTMLElement | null>(null)
-const logoInputRef = ref<HTMLInputElement | null>(null)
 const memberMenuId = ref<string | null>(null)
+const editOpen = ref(false)
 
 function onDocPointer(e: MouseEvent) {
   const t = e.target as Node | null
@@ -185,39 +185,14 @@ async function setSetting(key: keyof ChatTeamSettings, value: boolean) {
   }
 }
 
-function openLogoPicker() {
-  logoInputRef.value?.click()
-}
-
-async function onLogoChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !teamId.value) return
-  if (!/\.(jpe?g|png|gif)$/i.test(file.name)) {
-    pushToast({ tone: 'warning', title: 'Unsupported file', message: 'Use a .jpg, .png or .gif image.' })
-    input.value = ''
-    return
-  }
-  try {
-    const url = await changeTeamLogo(teamId.value, file)
-    const cacheSafeUrl = url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : null
-    if (cacheSafeUrl && detail.value) detail.value.logoUrl = cacheSafeUrl
-    if (cacheSafeUrl) store.updateConversationAvatar(props.conversationId, cacheSafeUrl)
-    pushToast({ tone: 'success', title: 'Logo updated', message: 'The team logo has been changed.' })
-  } catch (err) {
-    pushToast({
-      tone: 'warning',
-      title: 'Could not change logo',
-      message: err instanceof Error ? err.message : 'Please try again.'
-    })
-  } finally {
-    input.value = ''
-  }
-}
-
 function editDetails() {
   settingsOpen.value = false
-  openTeamDetail('teammates')
+  editOpen.value = true
+}
+
+async function onTeamEdited() {
+  await loadDetail(true)
+  if (detail.value?.logoUrl) store.updateConversationAvatar(props.conversationId, detail.value.logoUrl)
 }
 
 async function doArchive() {
@@ -554,6 +529,7 @@ watch(
     detail.value = null
     detailLoadedTeamId.value = ''
     memberMenuId.value = null
+    editOpen.value = false
     void loadDetail()
   },
   { immediate: true }
@@ -637,17 +613,6 @@ watch(teamId, () => {
           <div v-if="settingsOpen" class="info-panel__menu" role="menu">
           <button type="button" class="info-action" @click="toggleConvLock">
             <span class="info-action__label">{{ convHasLock ? 'Remove chat lock' : 'Lock this chat' }}</span>
-            <span class="info-action__chevron">›</span>
-          </button>
-          <input
-            ref="logoInputRef"
-            type="file"
-            class="info-panel__file"
-            accept="image/png, image/jpeg, image/gif"
-            @change="onLogoChange"
-          />
-          <button v-if="isAdmin" type="button" class="info-action" @click="openLogoPicker">
-            <span class="info-action__label">Change Team Logo</span>
             <span class="info-action__chevron">›</span>
           </button>
           <button v-if="isAdmin" type="button" class="info-action" @click="editDetails">
@@ -899,6 +864,13 @@ watch(teamId, () => {
       :excluded-user-chat-ids="existingMemberChatIds"
       @sent="onInviteSent"
     />
+    <EditTeamModal
+      v-if="isTeam && teamId"
+      v-model="editOpen"
+      :team-id="teamId"
+      :detail="detail"
+      @saved="onTeamEdited"
+    />
   </aside>
 </template>
 
@@ -1053,10 +1025,6 @@ watch(teamId, () => {
   background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
   border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
   box-shadow: var(--shadow, 0 10px 24px rgba(36, 60, 91, 0.18));
-}
-
-.info-panel__file {
-  display: none;
 }
 
 .info-action {
