@@ -34,6 +34,30 @@ const messages = computed<ChatMessage[]>(
 const hasMore = computed(() => !!hasMoreByConversation.value[props.conversationId])
 const loadingOlder = computed(() => !!loadingOlderByConversation.value[props.conversationId])
 
+// ── In-conversation search (client-side over loaded messages) ──────────────
+const searchOpen = ref(false)
+const searchQuery = ref('')
+const displayedMessages = computed<ChatMessage[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return messages.value
+  return messages.value.filter((m) => (m.content || '').toLowerCase().includes(q))
+})
+const searchActive = computed(() => searchQuery.value.trim().length > 0)
+const searchCount = computed(() => (searchActive.value ? displayedMessages.value.length : 0))
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (!searchOpen.value) searchQuery.value = ''
+}
+
+// ── Jump-to-bottom / unread pill ───────────────────────────────────────────
+const showScrollButton = ref(false)
+const unreadCount = computed(() => conversation.value?.unreadCount ?? 0)
+function jumpToBottom() {
+  scrollToBottom()
+  store.markConversationRead(props.conversationId)
+  showScrollButton.value = false
+}
+
 // Admin in a team chat → can moderate (delete) others' messages.
 const canModerate = computed(() => {
   if (!isTeam.value) return false
@@ -59,7 +83,7 @@ interface DayGroup {
 const dayGroups = computed<DayGroup[]>(() => {
   const groups: DayGroup[] = []
   let current: DayGroup | null = null
-  const all = messages.value
+  const all = displayedMessages.value
   for (let i = 0; i < all.length; i += 1) {
     const m = all[i]
     const key = dayKey(m.createdAt)
@@ -150,6 +174,7 @@ let infiniteGuard = false
 async function onScroll() {
   const el = scroller.value
   if (!el) return
+  showScrollButton.value = !isNearBottom()
   if (el.scrollTop < 80 && hasMore.value && !loadingOlder.value && !infiniteGuard) {
     infiniteGuard = true
     const prevHeight = el.scrollHeight
@@ -239,12 +264,38 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="thread__info-btn"
+        :class="{ 'thread__info-btn--active': searchOpen }"
+        aria-label="Search in conversation"
+        @click="toggleSearch"
+      >
+        <AppIcon name="search" :size="18" />
+      </button>
+
+      <button
+        type="button"
+        class="thread__info-btn"
         aria-label="Conversation info"
         @click="$emit('toggle-info')"
       >
         <AppIcon name="ellipsis" :size="20" />
       </button>
     </header>
+
+    <!-- In-conversation search bar -->
+    <div v-if="searchOpen" class="thread__search">
+      <span class="thread__search-icon"><AppIcon name="search" :size="16" /></span>
+      <input
+        v-model="searchQuery"
+        type="search"
+        class="thread__search-input"
+        placeholder="Search in this conversation"
+        aria-label="Search in this conversation"
+      />
+      <span v-if="searchActive" class="thread__search-count">{{ searchCount }} found</span>
+      <button type="button" class="thread__search-clear" aria-label="Close search" @click="toggleSearch">
+        <AppIcon name="close" :size="14" />
+      </button>
+    </div>
 
     <div ref="scroller" class="thread__scroll" @scroll="onScroll">
       <div v-if="loadingOlder" class="thread__loading">Loading earlier messages…</div>
@@ -272,12 +323,34 @@ onBeforeUnmount(() => {
         />
       </template>
 
-      <div v-if="!messages.length" class="thread__empty">
+      <div v-if="searchActive && !displayedMessages.length" class="thread__empty">
+        <span class="thread__empty-icon"><AppIcon name="search" :size="30" /></span>
+        <p class="thread__empty-text">No matches</p>
+        <p class="thread__empty-sub">No messages match “{{ searchQuery }}”.</p>
+      </div>
+      <div v-else-if="!messages.length" class="thread__empty">
         <span class="thread__empty-icon"><AppIcon name="message" :size="32" /></span>
         <p class="thread__empty-text">No messages yet</p>
         <p class="thread__empty-sub">Say hello to start the conversation.</p>
       </div>
     </div>
+
+    <!-- Jump-to-bottom / unread pill -->
+    <Transition name="thread__jump">
+      <button
+        v-if="showScrollButton"
+        type="button"
+        class="thread__jump"
+        :class="{ 'thread__jump--unread': unreadCount > 0 }"
+        :aria-label="unreadCount > 0 ? `Jump to ${unreadCount} new messages` : 'Scroll to latest'"
+        @click="jumpToBottom"
+      >
+        <span v-if="unreadCount > 0" class="thread__jump-count">{{ unreadCount }} new</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </Transition>
 
     <MessageInfoModal v-model="infoOpen" :message="infoMessage" />
 
@@ -293,11 +366,107 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .thread {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   background: var(--surface-card, #fff);
+}
+
+.thread__info-btn--active {
+  background: var(--primary-light-3, #eef4fd);
+  color: var(--primary, #2d8cf0);
+}
+
+/* In-conversation search bar */
+.thread__search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  background: var(--surface-chrome, rgba(255, 255, 255, 0.96));
+}
+.thread__search-icon {
+  display: inline-flex;
+  color: var(--text-light, #787f8d);
+}
+.thread__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text, #2e3137);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+.thread__search-count {
+  flex: 0 0 auto;
+  color: var(--text-light, #787f8d);
+  font-size: 0.76rem;
+}
+.thread__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-light, #787f8d);
+  cursor: pointer;
+}
+.thread__search-clear:hover {
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+}
+
+/* Jump-to-bottom / unread pill */
+.thread__jump {
+  position: absolute;
+  right: 18px;
+  bottom: 84px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 999px;
+  background: var(--surface-opaque, #fff);
+  color: var(--secondary, #2f5f98);
+  box-shadow: var(--shadow, 0 10px 24px rgba(36, 60, 91, 0.08));
+  cursor: pointer;
+}
+.thread__jump:hover {
+  color: var(--primary, #2d8cf0);
+  border-color: var(--primary-light-2, #c9e1fc);
+}
+.thread__jump--unread {
+  background: var(--primary, #2d8cf0);
+  border-color: var(--primary, #2d8cf0);
+  color: #fff;
+}
+.thread__jump--unread:hover {
+  color: #fff;
+  filter: brightness(1.05);
+}
+.thread__jump-count {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.thread__jump-enter-active,
+.thread__jump-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.thread__jump-enter-from,
+.thread__jump-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .thread__header {
