@@ -24,6 +24,16 @@ async function fetchData<T>(path: string): Promise<T | null> {
   return (env?.data ?? null) as T | null
 }
 
+function buildQuery(params: { eventId?: string | null; eventType?: string | null; association?: string | null }): string {
+  const sp = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (!value || value === 'all') continue
+    sp.set(key, value)
+  }
+  const qs = sp.toString()
+  return qs ? `?${qs}` : ''
+}
+
 // ── Association (header) ─────────────────────────────────────────────────────
 
 export interface TeamAssociation {
@@ -82,9 +92,16 @@ export interface TeamPlayerStat {
   obp: string
 }
 
-export async function fetchTeamPlayerStats(teamId: string): Promise<TeamPlayerStat[]> {
+export interface TeamStatsFilters {
+  eventId?: string
+  eventType?: string
+  association?: string
+}
+
+export async function fetchTeamPlayerStats(teamId: string, filters: TeamStatsFilters = {}): Promise<TeamPlayerStat[]> {
+  const qs = buildQuery(filters)
   const data = await fetchData<{ players: TeamPlayerStat[] }>(
-    `/chat/teams/${encodeURIComponent(teamId)}/player-stats`
+    `/chat/teams/${encodeURIComponent(teamId)}/player-stats${qs}`
   )
   return Array.isArray(data?.players) ? data!.players : []
 }
@@ -96,7 +113,10 @@ export interface TeamGameStatRow {
   date: string | null
   opponentName: string
   result: 'won' | 'lost' | null
+  eventId?: string | null
   eventName: string | null
+  eventType?: string | null
+  association?: string | null
   onbase: string
   avg: string
   ab: number
@@ -133,8 +153,9 @@ export interface TeamGameStats {
   total: TeamGameStatsTotal | null
 }
 
-export async function fetchTeamGameStats(teamId: string): Promise<TeamGameStats> {
-  const data = await fetchData<TeamGameStats>(`/chat/teams/${encodeURIComponent(teamId)}/team-stats`)
+export async function fetchTeamGameStats(teamId: string, filters: TeamStatsFilters = {}): Promise<TeamGameStats> {
+  const qs = buildQuery(filters)
+  const data = await fetchData<TeamGameStats>(`/chat/teams/${encodeURIComponent(teamId)}/team-stats${qs}`)
   return { games: Array.isArray(data?.games) ? data!.games : [], total: data?.total ?? null }
 }
 

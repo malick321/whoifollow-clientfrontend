@@ -11,9 +11,26 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
+import EditTeamModal from '../components/chat/EditTeamModal.vue'
+import InviteToTeamModal from '../components/chat/InviteToTeamModal.vue'
+import SlideModal from '../components/SlideModal.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import { fetchTeamDetail, type ChatTeamDetail } from '../api/chat'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
+import { getAuthUserChatId } from '../auth-session'
+import { confirmDialog } from '../confirm-center'
+import {
+  archiveTeam,
+  fetchTeamDetail,
+  getOrCreateIndividualConversation,
+  leaveTeam,
+  removeTeamMember,
+  reportTeam,
+  sendMessageRest,
+  updateTeamMemberRole,
+  updateTeamSettings,
+  type ChatTeamDetail
+} from '../api/chat'
 import {
   fetchTeamAssociation,
   fetchTeamEvents,
@@ -24,8 +41,10 @@ import {
   type TeamEventItem,
   type TeamGameStats,
   type TeamMemberItem,
-  type TeamPlayerStat
+  type TeamPlayerStat,
+  type TeamStatsFilters
 } from '../api/teamDetail'
+import { pushToast } from '../toast-center'
 
 type TabKey = 'events' | 'teammates' | 'player-stats' | 'team-stats'
 const TABS: { key: TabKey; label: string }[] = [
@@ -49,10 +68,30 @@ function viewPlayerStats(userId: string | null | undefined) {
   if (userId) router.push({ name: 'player-passport', params: { playerId: userId } })
 }
 function closeMemberMenu() { openMemberMenu.value = null }
+function onDocumentClick(event: MouseEvent) {
+  closeMemberMenu()
+  const target = event.target as Node | null
+  if (settingsOpen.value && settingsWrap.value && target && !settingsWrap.value.contains(target)) {
+    settingsOpen.value = false
+  }
+}
 
-// Header actions.
-function goToChat() { router.push({ name: 'chat' }) }
-function openTeamSettings() { setTab('teammates') }
+// Header/settings/actions.
+const settingsOpen = ref(false)
+const settingsWrap = ref<HTMLElement | null>(null)
+const inviteOpen = ref(false)
+const editOpen = ref(false)
+const currentChatId = computed(() => getAuthUserChatId())
+
+function goToChat(conversationId = detail.value?.conversationId ?? null) {
+  router.push({
+    name: 'chat',
+    query: conversationId ? { conversationId } : undefined
+  })
+}
+function openTeamSettings() {
+  settingsOpen.value = !settingsOpen.value
+}
 
 const detail = ref<ChatTeamDetail | null>(null)
 const association = ref<TeamAssociation | null>(null)
@@ -103,6 +142,9 @@ const filterState = ref('all')
 const showPast = ref(true)
 const memberRole = ref<'all' | 'admins' | 'players' | 'fans'>('all')
 const memberSearch = ref('')
+const statEvent = ref('all')
+const statType = ref('all')
+const statAssoc = ref('all')
 type PlayerSortKey = 'obp' | 'avg' | 'hr' | 'rbi' | 'r' | 'ab' | 'games'
 const playerSort = ref<PlayerSortKey>('obp')
 const PLAYER_SORTS: { key: PlayerSortKey; label: string }[] = [
@@ -122,6 +164,11 @@ const eventYears = computed(() => [...new Set(events.value.map(eventYear).filter
 const eventTypes = computed(() => [...new Set(events.value.map((e) => e.eventType).filter(Boolean))] as string[])
 const eventAssocs = computed(() => [...new Set(events.value.map((e) => e.association).filter(Boolean))] as string[])
 const eventStates = computed(() => [...new Set(events.value.map(eventState).filter(Boolean))])
+const statFilterPayload = computed<TeamStatsFilters>(() => ({
+  eventId: statEvent.value,
+  eventType: statType.value,
+  association: statAssoc.value
+}))
 
 const MEMBER_ROLES: { key: 'all' | 'admins' | 'players' | 'fans'; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'admins', label: 'Admins' },
@@ -149,6 +196,9 @@ const filteredMembers = computed(() => {
     return true
   })
 })
+const excludedMemberChatIds = computed(() =>
+  members.value.map((m) => m.userChatId).filter((id): id is string => !!id)
+)
 
 const sortedPlayers = computed(() => {
   const key = playerSort.value
@@ -163,14 +213,25 @@ function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   return 'neutral'
 }
 
-async function loadTab(tab: TabKey) {
-  if (loaded.value[tab]) return
+async function ensureEventsLoaded() {
+  if (loaded.value.events) return
+  events.value = await fetchTeamEvents(teamId.value)
+  loaded.value.events = true
+}
+
+async function loadTab(tab: TabKey, force = false) {
+  if (loaded.value[tab] && !force) return
   loadingTab.value = true
   try {
     if (tab === 'events') events.value = await fetchTeamEvents(teamId.value)
     else if (tab === 'teammates') members.value = await fetchTeamMembers(teamId.value)
-    else if (tab === 'player-stats') players.value = await fetchTeamPlayerStats(teamId.value)
-    else if (tab === 'team-stats') teamGameStats.value = await fetchTeamGameStats(teamId.value)
+    else if (tab === 'player-stats') {
+      await ensureEventsLoaded()
+      players.value = await fetchTeamPlayerStats(teamId.value, statFilterPayload.value)
+    } else if (tab === 'team-stats') {
+      await ensureEventsLoaded()
+      teamGameStats.value = await fetchTeamGameStats(teamId.value, statFilterPayload.value)
+    }
     loaded.value[tab] = true
   } finally {
     loadingTab.value = false
@@ -182,7 +243,226 @@ function setTab(tab: TabKey) {
   void loadTab(tab)
 }
 
+async function refreshHeader() {
+  const [d, a] = await Promise.all([
+    fetchTeamDetail(teamId.value).catch(() => null),
+    fetchTeamAssociation(teamId.value).catch(() => null)
+  ])
+  detail.value = d
+  association.value = a
+}
+
+async function onTeamEdited() {
+  await refreshHeader()
+  if (loaded.value.teammates) {
+    members.value = await fetchTeamMembers(teamId.value)
+  }
+}
+
+async function onInviteSent() {
+  loaded.value.teammates = false
+  await loadTab('teammates', true)
+  await refreshHeader()
+}
+
+async function setSetting(key: keyof ChatTeamDetail['settings'], value: boolean) {
+  if (!detail.value) return
+  const previous = detail.value.settings[key]
+  detail.value.settings[key] = value
+  try {
+    detail.value.settings = await updateTeamSettings(teamId.value, { [key]: value })
+  } catch (error) {
+    if (detail.value) detail.value.settings[key] = previous
+    pushToast({ tone: 'warning', title: 'Could not update setting', message: error instanceof Error ? error.message : 'Please try again.' })
+  }
+}
+
+async function printTeamInfo() {
+  const roster = members.value.length ? members.value : await fetchTeamMembers(teamId.value)
+  if (!members.value.length) {
+    members.value = roster
+    loaded.value.teammates = true
+  }
+  const popup = window.open('', '_blank', 'width=860,height=700')
+  if (!popup) {
+    pushToast({ tone: 'warning', title: 'Print blocked', message: 'Please allow popups to print team info.' })
+    return
+  }
+  const rows = roster.map((m, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${m.name}</td>
+      <td>${m.isAdmin ? 'Admin' : (m.isFan ? 'Fan' : 'Teammate')}</td>
+      <td>${m.isPlayer ? 'Yes' : 'No'}</td>
+      <td>${m.uniformNo || ''}</td>
+    </tr>
+  `).join('')
+  popup.document.write(`
+    <html>
+      <head>
+        <title>${detail.value?.name || 'Team'} Info</title>
+        <style>
+          body{font-family:Arial,sans-serif;padding:24px;color:#172033}
+          h1{font-size:22px;margin:0 0 4px}
+          p{margin:0 0 18px;color:#526477}
+          table{width:100%;border-collapse:collapse;font-size:13px}
+          th,td{border-bottom:1px solid #d8e1ec;padding:9px;text-align:left}
+          th{background:#f4f8fd;color:#2f5f98}
+        </style>
+      </head>
+      <body>
+        <h1>${detail.value?.name || 'Team'}</h1>
+        <p>${[detail.value?.categoryLabel, detail.value?.ageGenderLabel].filter(Boolean).join(' - ')}</p>
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Role</th><th>Player</th><th>Uniform</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </body>
+    </html>
+  `)
+  popup.document.close()
+  popup.focus()
+  popup.print()
+}
+
+function canManageMember(member: TeamMemberItem): boolean {
+  return !!detail.value?.isAdmin && !!member.userChatId && member.userChatId !== currentChatId.value
+}
+
+async function changeMemberRole(member: TeamMemberItem, role: 'admin' | 'teammate' | 'fan') {
+  if (!member.userId) return
+  try {
+    await updateTeamMemberRole(teamId.value, {
+      userId: member.userId,
+      userIdFirebase: member.userChatId ?? null
+    }, {
+      role,
+      markAsPlayer: role !== 'fan' ? member.isPlayer : false
+    })
+    members.value = await fetchTeamMembers(teamId.value)
+    pushToast({ tone: 'success', title: 'Member updated' })
+  } catch (error) {
+    pushToast({ tone: 'warning', title: 'Could not update member', message: error instanceof Error ? error.message : 'Please try again.' })
+  } finally {
+    openMemberMenu.value = null
+  }
+}
+
+async function removeMemberFromTeam(member: TeamMemberItem) {
+  if (!member.userChatId) return
+  const ok = await confirmDialog({
+    title: 'Remove member?',
+    message: `${member.name} will be removed from this team.`,
+    confirmLabel: 'Remove',
+    danger: true
+  })
+  if (!ok) return
+  try {
+    await removeTeamMember(teamId.value, member.userChatId)
+    members.value = await fetchTeamMembers(teamId.value)
+    await refreshHeader()
+    pushToast({ tone: 'success', title: 'Member removed' })
+  } catch (error) {
+    pushToast({ tone: 'warning', title: 'Could not remove member', message: error instanceof Error ? error.message : 'Please try again.' })
+  } finally {
+    openMemberMenu.value = null
+  }
+}
+
+async function archiveCurrentTeam() {
+  try {
+    await archiveTeam(teamId.value, true)
+    pushToast({ tone: 'success', title: 'Team archived' })
+    settingsOpen.value = false
+  } catch (error) {
+    pushToast({ tone: 'warning', title: 'Could not archive team', message: error instanceof Error ? error.message : 'Please try again.' })
+  }
+}
+
+async function reportCurrentTeam() {
+  await reportTeam(teamId.value)
+  pushToast({ tone: 'success', title: 'Team reported', message: 'Thanks. Our team will review it.' })
+  settingsOpen.value = false
+}
+
+async function exitCurrentTeam() {
+  const ok = await confirmDialog({
+    title: 'Exit team?',
+    message: `You will leave ${detail.value?.name || 'this team'}.`,
+    confirmLabel: 'Exit team',
+    danger: true
+  })
+  if (!ok) return
+  await leaveTeam(teamId.value)
+  pushToast({ tone: 'success', title: 'Left team' })
+  router.push({ name: 'chat' })
+}
+
+type MessageTarget =
+  | { type: 'team'; title: string; conversationId: string | null }
+  | { type: 'dm'; title: string; userChatId: string }
+
+const messageOpen = ref(false)
+const messageTarget = ref<MessageTarget | null>(null)
+const messageDraft = ref('')
+const messageSending = ref(false)
+
+function openTeamMessage() {
+  messageTarget.value = {
+    type: 'team',
+    title: detail.value?.name || 'Team',
+    conversationId: detail.value?.conversationId ?? null
+  }
+  messageDraft.value = ''
+  messageOpen.value = true
+}
+
+function openMemberMessage(member: TeamMemberItem) {
+  if (!member.userChatId) return
+  openMemberMenu.value = null
+  messageTarget.value = { type: 'dm', title: member.name, userChatId: member.userChatId }
+  messageDraft.value = ''
+  messageOpen.value = true
+}
+
+async function resolveMessageConversationId(): Promise<string | null> {
+  const target = messageTarget.value
+  if (!target) return null
+  if (target.type === 'team') return target.conversationId
+  const conversation = await getOrCreateIndividualConversation(target.userChatId)
+  return conversation?.id ?? null
+}
+
+async function sendQuickMessage() {
+  const content = messageDraft.value.trim()
+  if (!content) return
+  messageSending.value = true
+  try {
+    const conversationId = await resolveMessageConversationId()
+    if (!conversationId) throw new Error('Conversation was not found.')
+    await sendMessageRest(conversationId, { content })
+    pushToast({ tone: 'success', title: 'Message sent' })
+    messageOpen.value = false
+    messageDraft.value = ''
+  } catch (error) {
+    pushToast({ tone: 'warning', title: 'Could not send message', message: error instanceof Error ? error.message : 'Please try again.' })
+  } finally {
+    messageSending.value = false
+  }
+}
+
+async function openTargetChat() {
+  const conversationId = await resolveMessageConversationId()
+  if (conversationId) goToChat(conversationId)
+}
+
 watch(activeTab, (t) => { void loadTab(t) })
+
+watch([statEvent, statType, statAssoc], () => {
+  if (activeTab.value !== 'player-stats' && activeTab.value !== 'team-stats') return
+  loaded.value[activeTab.value] = false
+  void loadTab(activeTab.value, true)
+})
 
 onMounted(async () => {
   const q = String(route.query.tab ?? '')
@@ -198,10 +478,10 @@ onMounted(async () => {
   loadingHeader.value = false
 
   void loadTab(activeTab.value)
-  document.addEventListener('click', closeMemberMenu)
+  document.addEventListener('click', onDocumentClick)
 })
 
-onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>
@@ -238,11 +518,46 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
       </div>
 
       <div class="hero-status">
-        <div class="team-detail__hero-actions">
-          <button type="button" class="td-hero-btn" @click="goToChat">
+        <div ref="settingsWrap" class="team-detail__hero-actions" @click.stop>
+          <button type="button" class="td-hero-btn" @click="openTeamMessage">
             <AppIcon name="message" :size="14" /> Message Team
           </button>
-          <button type="button" class="td-hero-btn" @click="openTeamSettings">Settings</button>
+          <button type="button" class="td-hero-btn" :class="{ 'is-active': settingsOpen }" @click="openTeamSettings">
+            Settings
+          </button>
+          <div v-if="settingsOpen" class="td-settings-menu">
+            <button v-if="detail?.isAdmin" type="button" class="td-settings-menu__item" @click="editOpen = true; settingsOpen = false">
+              <span>Edit Team Details / Logo</span>
+            </button>
+            <button type="button" class="td-settings-menu__item" @click="inviteOpen = true; settingsOpen = false">
+              <span>Invite To Team</span>
+            </button>
+            <button type="button" class="td-settings-menu__item" @click="printTeamInfo">
+              <span>Print Team Info</span>
+            </button>
+            <div class="td-settings-menu__toggle">
+              <span>SMS Notification</span>
+              <ToggleSwitch :model-value="detail?.settings.smsNotification ?? false" @update:model-value="setSetting('smsNotification', $event)" />
+            </div>
+            <div class="td-settings-menu__toggle">
+              <span>Push Notification</span>
+              <ToggleSwitch :model-value="detail?.settings.pushNotification ?? false" @update:model-value="setSetting('pushNotification', $event)" />
+            </div>
+            <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
+              <span>Show On Base % as Average</span>
+              <ToggleSwitch :model-value="detail?.settings.showOnBaseAvg ?? false" @update:model-value="setSetting('showOnBaseAvg', $event)" />
+            </div>
+            <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
+              <span>Show average for top 5 players</span>
+              <ToggleSwitch :model-value="detail?.settings.showTop5Avg ?? false" @update:model-value="setSetting('showTop5Avg', $event)" />
+            </div>
+            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="archiveCurrentTeam">Archive Team</button>
+            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="reportCurrentTeam">Report Team</button>
+            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="exitCurrentTeam">Exit Team</button>
+            <p v-if="detail?.createdByName" class="td-settings-menu__created">
+              Created by {{ detail.createdByName }}
+            </p>
+          </div>
         </div>
         <div class="team-detail__record">
           <template v-if="loadingHeader">
@@ -338,7 +653,11 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
       <template v-else-if="activeTab === 'teammates'">
         <div v-if="members.length" class="td-members-head">
           <span class="td-members-count">{{ filteredMembers.length }} {{ filteredMembers.length === 1 ? 'Teammate' : 'Teammates' }}</span>
-          <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
+          <div class="td-members-actions">
+            <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
+            <button type="button" class="td-toolbar-btn" @click="printTeamInfo">Print Team Info</button>
+            <button type="button" class="td-toolbar-btn" @click="inviteOpen = true">Invite To Team</button>
+          </div>
         </div>
         <div v-if="members.length" class="td-filter">
           <button
@@ -372,8 +691,33 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
               >⋯</button>
               <ul v-if="openMemberMenu === m.memberId" class="td-menu">
                 <li>
+                  <button type="button" :disabled="!m.userChatId" @click="openMemberMessage(m)">
+                    Send Direct Message
+                  </button>
+                </li>
+                <li>
                   <button type="button" :disabled="!m.userId" @click="viewPlayerStats(m.userId)">
-                    View player stats
+                    View Player Stats
+                  </button>
+                </li>
+                <li v-if="canManageMember(m) && (m.isAdmin || m.isFan)">
+                  <button type="button" @click="changeMemberRole(m, 'teammate')">
+                    Make Team Member
+                  </button>
+                </li>
+                <li v-if="canManageMember(m) && !m.isAdmin">
+                  <button type="button" @click="changeMemberRole(m, 'admin')">
+                    Make Team Admin
+                  </button>
+                </li>
+                <li v-if="canManageMember(m) && !m.isFan">
+                  <button type="button" @click="changeMemberRole(m, 'fan')">
+                    Make Fan
+                  </button>
+                </li>
+                <li v-if="canManageMember(m)">
+                  <button type="button" class="is-danger" @click="removeMemberFromTeam(m)">
+                    Remove From Team
                   </button>
                 </li>
               </ul>
@@ -385,6 +729,20 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 
       <!-- Player Statistics -->
       <template v-else-if="activeTab === 'player-stats'">
+        <div v-if="events.length" class="td-filter td-filter--wrap">
+          <select v-model="statEvent" class="td-select" aria-label="Event">
+            <option value="all">Event</option>
+            <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+          </select>
+          <select v-model="statType" class="td-select" aria-label="Type">
+            <option value="all">Type</option>
+            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
+          </select>
+          <select v-model="statAssoc" class="td-select" aria-label="Association">
+            <option value="all">Association</option>
+            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </div>
         <div v-if="players.length" class="td-filter">
           <span class="td-filter__label">Sort by</span>
           <button
@@ -419,6 +777,20 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 
       <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
       <template v-else-if="activeTab === 'team-stats'">
+        <div v-if="events.length" class="td-filter td-filter--wrap">
+          <select v-model="statEvent" class="td-select" aria-label="Event">
+            <option value="all">Event</option>
+            <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+          </select>
+          <select v-model="statType" class="td-select" aria-label="Type">
+            <option value="all">Type</option>
+            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
+          </select>
+          <select v-model="statAssoc" class="td-select" aria-label="Association">
+            <option value="all">Association</option>
+            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
+          </select>
+        </div>
         <div v-if="teamGameStats.games.length" class="team-detail__table-wrap">
           <table class="team-detail__table team-detail__stats-table">
             <thead>
@@ -459,6 +831,45 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
         <p v-else class="team-detail__empty">No team statistics yet.</p>
       </template>
     </section>
+
+    <InviteToTeamModal
+      v-if="teamId && detail"
+      v-model="inviteOpen"
+      :team-id="teamId"
+      :team-name="detail.name"
+      :team-logo-url="detail.logoUrl"
+      :excluded-user-chat-ids="excludedMemberChatIds"
+      @sent="onInviteSent"
+    />
+
+    <EditTeamModal
+      v-if="teamId"
+      v-model="editOpen"
+      :team-id="teamId"
+      :detail="detail"
+      @saved="onTeamEdited"
+    />
+
+    <SlideModal
+      v-model="messageOpen"
+      :title="messageTarget ? `Message ${messageTarget.title}` : 'Send Message'"
+      subtitle="Send a quick message without leaving this page."
+    >
+      <div class="td-message-box">
+        <textarea
+          v-model="messageDraft"
+          rows="5"
+          placeholder="Type your message"
+          :disabled="messageSending"
+        ></textarea>
+      </div>
+      <template #footer>
+        <button type="button" class="secondary-button" :disabled="messageSending" @click="openTargetChat">Open chat</button>
+        <button type="button" class="primary-button" :disabled="messageSending || !messageDraft.trim()" @click="sendQuickMessage">
+          {{ messageSending ? 'Sending...' : 'Send message' }}
+        </button>
+      </template>
+    </SlideModal>
   </main>
 </template>
 
@@ -549,7 +960,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
   outline: none;
 }
 .td-select:focus { border-color: var(--primary); }
-.team-detail__hero-actions { display: flex; gap: 8px; margin-bottom: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.team-detail__hero-actions { position: relative; display: flex; gap: 8px; margin-bottom: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .td-hero-btn {
   display: inline-flex;
   align-items: center;
@@ -565,7 +976,60 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
-.td-hero-btn:hover { color: var(--primary); border-color: var(--border-accent-hover, var(--primary-light-2)); }
+.td-hero-btn:hover,
+.td-hero-btn.is-active { color: var(--primary); border-color: var(--border-accent-hover, var(--primary-light-2)); }
+.td-settings-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-card);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+}
+.td-settings-menu__item {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-md, 6px);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+.td-settings-menu__item:hover {
+  background: var(--surface-pill);
+  color: var(--primary);
+}
+.td-settings-menu__item--danger {
+  color: #c1413a;
+}
+.td-settings-menu__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-divider);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.td-settings-menu__created {
+  margin: 4px 10px 0;
+  color: var(--text-light);
+  font-size: 0.72rem;
+}
 .td-filter__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .td-filter__label { color: var(--secondary); font-size: 0.78rem; margin-right: 2px; }
 .td-filter__chip {
@@ -659,6 +1123,28 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
 .td-member__uniform { color: var(--text-light); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .td-members-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .td-members-count { color: var(--text); font-weight: 500; font-size: 0.95rem; }
+.td-members-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.td-toolbar-btn {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface-card);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.td-toolbar-btn:hover {
+  color: var(--primary);
+  border-color: var(--border-accent-hover, var(--primary-light-2));
+}
 .td-member__badges { display: flex; gap: 6px; margin-top: 2px; }
 .td-badge { font-size: 0.68rem; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: var(--surface-pill); color: var(--secondary); }
 .td-badge--admin { background: var(--primary-light-3); color: var(--primary); }
@@ -696,7 +1182,26 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMemberMenu))
   cursor: pointer;
 }
 .td-menu button:hover:not(:disabled) { background: var(--surface-pill); color: var(--primary); }
+.td-menu button.is-danger { color: #c1413a; }
+.td-menu button.is-danger:hover:not(:disabled) { background: rgba(193, 65, 58, 0.1); color: #c1413a; }
 .td-menu button:disabled { color: var(--text-light); cursor: default; }
+
+.td-message-box textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 140px;
+  padding: 12px;
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-card);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.td-message-box textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light-3);
+}
 
 /* Player stats table */
 .team-detail__table-wrap { overflow-x: auto; }

@@ -277,7 +277,14 @@ export interface ApiTeamOngoingEvent {
 export interface ApiTeamDetail {
   id?: string | null
   teamId?: string | null
+  conversationId?: string | null
   name?: string | null
+  category?: string | null
+  sportTypeId?: string | null
+  city?: string | null
+  state?: string | null
+  gender?: string | null
+  ageGroup?: string | null
   categoryLabel?: string | null
   ageGenderLabel?: string | null
   logoUrl?: string | null

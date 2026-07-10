@@ -567,10 +567,37 @@ watch(isAuthenticated, (authenticated) => {
           <div v-if="post.images[0]" class="opinions-specialist-card__media">
             <img :src="post.images[0]" alt="Specialist post image" loading="lazy" />
           </div>
-          <footer>
-            <span><AppIcon name="like" :size="14" />{{ post.likeCount }}</span>
-            <span><AppIcon name="message" :size="14" />{{ post.commentCount }}</span>
+          <footer class="opinions-specialist-card__actions">
+            <button
+              type="button"
+              class="opinions-specialist-card__action"
+              :class="{ 'is-liked': post.likedByMe }"
+              :disabled="likeBusyIds.has(post.id)"
+              :aria-pressed="post.likedByMe ? 'true' : 'false'"
+              @click="toggleLike(post)"
+            >
+              <AppIcon name="like" :size="14" />
+              <span>{{ post.likedByMe ? 'Liked' : 'Like' }}</span>
+              <b v-if="post.likeCount">{{ post.likeCount }}</b>
+            </button>
+            <button
+              type="button"
+              class="opinions-specialist-card__action"
+              :class="{ 'is-active': commentsOpen(post.id) }"
+              @click="toggleComments(post.id)"
+            >
+              <AppIcon name="message" :size="14" />
+              <span>Comment</span>
+              <b v-if="post.commentCount">{{ post.commentCount }}</b>
+            </button>
           </footer>
+          <CommentList
+            v-if="commentsOpen(post.id)"
+            :post-id="post.id"
+            :current-user-name="currentUser?.name || 'You'"
+            :current-user-avatar-url="currentUser?.avatarUrl ?? null"
+            @created="onCommentCreated(post.id, $event)"
+          />
         </article>
       </div>
 
@@ -1186,17 +1213,49 @@ watch(isAuthenticated, (authenticated) => {
   background: var(--surface-raised);
 }
 
-.opinions-specialist-card footer {
+.opinions-specialist-card__actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   color: var(--text-light);
   font-size: 0.8rem;
 }
 
-.opinions-specialist-card footer span {
+.opinions-specialist-card__action {
+  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  min-height: 32px;
+  border: 1px solid var(--border-divider);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface-card);
+  color: var(--secondary);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.opinions-specialist-card__action:hover:not(:disabled),
+.opinions-specialist-card__action.is-active {
+  border-color: var(--border-accent-hover, var(--primary-light-2));
+  color: var(--primary);
+  background: var(--surface-pill);
+}
+
+.opinions-specialist-card__action.is-liked {
+  border-color: var(--primary-light-2);
+  color: var(--primary);
+}
+
+.opinions-specialist-card__action b {
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.opinions-specialist-card__action:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .opinions-specialists__more {

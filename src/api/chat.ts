@@ -899,7 +899,14 @@ export interface ChatTeamOngoingEvent {
 export interface ChatTeamDetail {
   id: string
   teamId: string
+  conversationId: string | null
   name: string
+  category: string
+  sportTypeId: string | null
+  city: string
+  state: string
+  gender: string
+  ageGroup: string
   categoryLabel: string
   ageGenderLabel: string
   logoUrl: string | null
@@ -926,7 +933,14 @@ function adaptTeamDetail(raw: ApiTeamDetail): ChatTeamDetail {
   return {
     id: String(raw.id ?? ''),
     teamId: String(raw.teamId ?? raw.id ?? ''),
+    conversationId: raw.conversationId ? String(raw.conversationId) : null,
     name: raw.name ?? '',
+    category: raw.category ?? '',
+    sportTypeId: raw.sportTypeId ?? null,
+    city: raw.city ?? '',
+    state: raw.state ?? '',
+    gender: raw.gender ?? '',
+    ageGroup: raw.ageGroup ?? '',
     categoryLabel: raw.categoryLabel ?? '',
     ageGenderLabel: raw.ageGenderLabel ?? '',
     logoUrl: raw.logoUrl ?? null,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import ConversationList from '../components/chat/ConversationList.vue'
 import MessageThread from '../components/chat/MessageThread.vue'
@@ -14,6 +15,7 @@ import type { ChatConversation } from '../api/chat'
 
 const store = useChatStore()
 const lock = useChatLockStore()
+const route = useRoute()
 const { activeConversationId } = storeToRefs(store)
 
 // Details panel is open by default (per design); it only actually renders once
@@ -39,12 +41,24 @@ function onVisibility() {
   }
 }
 
+async function openConversationFromQuery() {
+  const id = String(route.query.conversationId ?? '')
+  if (!id) return
+  if (!store.conversations.length) await store.loadConversations()
+  await store.openConversation(id)
+}
+
 onMounted(() => {
   store.connect()
-  void store.loadConversations()
+  void store.loadConversations().then(openConversationFromQuery)
   void lock.load()
   document.addEventListener('visibilitychange', onVisibility)
 })
+
+watch(
+  () => route.query.conversationId,
+  () => { void openConversationFromQuery() }
+)
 
 onBeforeUnmount(() => {
   store.disconnect()
