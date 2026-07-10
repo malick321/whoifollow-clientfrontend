@@ -742,7 +742,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </div>
           </li>
         </ul>
-        <p v-else class="team-detail__empty">{{ events.length ? 'No events match this filter.' : 'No events yet.' }}</p>
+        <div v-else class="matchgeni-placeholder">
+          <h3 class="matchgeni-placeholder__title">{{ events.length ? 'No matching events' : 'No events yet' }}</h3>
+          <p class="matchgeni-placeholder__copy">{{ events.length ? 'No events match the current filters — try broadening them.' : 'This team hasn’t been added to any events yet.' }}</p>
+        </div>
       </template>
 
       <!-- Teammates -->
@@ -829,7 +832,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </div>
           </li>
         </ul>
-        <p v-else class="team-detail__empty">{{ members.length ? 'No teammates match.' : 'No teammates yet.' }}</p>
+        <div v-else class="matchgeni-placeholder">
+          <h3 class="matchgeni-placeholder__title">{{ members.length ? 'No matching teammates' : 'No teammates yet' }}</h3>
+          <p class="matchgeni-placeholder__copy">{{ members.length ? 'No teammates match your search or filter.' : 'Invite people to build out this team’s roster.' }}</p>
+        </div>
       </template>
 
       <!-- Player Statistics -->
@@ -877,7 +883,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </tbody>
           </table>
         </div>
-        <p v-else class="team-detail__empty">No player statistics yet.</p>
+        <div v-else class="matchgeni-placeholder">
+          <h3 class="matchgeni-placeholder__title">No player statistics yet</h3>
+          <p class="matchgeni-placeholder__copy">Batting stats will show here once this team’s games are scored.</p>
+        </div>
       </template>
 
       <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
@@ -933,7 +942,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </tbody>
           </table>
         </div>
-        <p v-else class="team-detail__empty">No team statistics yet.</p>
+        <div v-else class="matchgeni-placeholder">
+          <h3 class="matchgeni-placeholder__title">No team statistics yet</h3>
+          <p class="matchgeni-placeholder__copy">Per-game team stats appear here once games are scored.</p>
+        </div>
       </template>
     </section>
 
@@ -1189,31 +1201,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 /* Panel */
 .team-detail__panel { min-height: 120px; }
-.team-detail__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin: 8px 0;
-  padding: 40px 24px;
-  border: 1px dashed var(--border-divider);
-  border-radius: 12px;
-  background: var(--surface-raised, rgba(240, 246, 253, 0.5));
-  color: var(--text-light, #787f8d);
-  font-size: 0.92rem;
-  text-align: center;
-}
-.team-detail__empty::before {
-  content: '';
-  width: 40px;
-  height: 40px;
-  margin-bottom: 6px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at center, var(--surface-card) 42%, transparent 43%),
-    var(--secondary-light-3, #c5d1df);
-  opacity: 0.6;
-}
+/* Empty states use the shared `.matchgeni-placeholder` (colleague's project)
+   pattern from styles.css — no custom empty style here. */
 
 /* Filter / sort bars */
 .td-filter {
