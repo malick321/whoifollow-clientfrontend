@@ -868,8 +868,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in sortedPlayers" :key="p.userId">
-                <td class="td-l">{{ p.name }}</td>
+              <tr v-for="(p, i) in sortedPlayers" :key="p.userId" :class="{ 'td-leader': i === 0 }">
+                <td class="td-l"><span v-if="i === 0" class="td-leader-mark" aria-hidden="true">★</span>{{ p.name }}</td>
                 <td>{{ p.games }}</td><td>{{ p.ab }}</td><td>{{ p.h }}</td>
                 <td>{{ p.hr }}</td><td>{{ p.rbi }}</td><td>{{ p.r }}</td><td>{{ p.bb }}</td>
                 <td>{{ p.avg }}</td><td>{{ p.obp }}</td>
@@ -1103,15 +1103,27 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .team-detail__back:hover { color: var(--primary); }
 .team-detail__assoc { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); }
 .team-detail__assoc-reg { color: var(--text-light); }
-.team-detail__record { display: flex; gap: 18px; }
+.team-detail__record { display: flex; gap: 10px; }
 .team-detail__record-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  color: var(--secondary);
-  font-size: 0.72rem;
+  gap: 2px;
+  min-width: 64px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-divider);
+  border-radius: 12px;
+  background: var(--surface-raised, rgba(240, 246, 253, 0.6));
+  color: var(--text-light, #787f8d);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
-.team-detail__record-item b { color: var(--text); font-size: 1.15rem; font-weight: 600; }
+.team-detail__record-item b { color: var(--text); font-size: 1.35rem; font-weight: 700; letter-spacing: 0; }
+/* Middle "Won" tile gets a subtle success accent. */
+.team-detail__record-item:nth-child(2) { border-color: rgba(41, 207, 89, 0.35); }
+.team-detail__record-item:nth-child(2) b { color: var(--success, #29cf59); }
 
 /* Tabs — canonical matchgeni pill treatment (solid primary fill when active,
    optional count badge). */
@@ -1177,7 +1189,31 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 /* Panel */
 .team-detail__panel { min-height: 120px; }
-.team-detail__empty { color: var(--secondary); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
+.team-detail__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 40px 24px;
+  border: 1px dashed var(--border-divider);
+  border-radius: 12px;
+  background: var(--surface-raised, rgba(240, 246, 253, 0.5));
+  color: var(--text-light, #787f8d);
+  font-size: 0.92rem;
+  text-align: center;
+}
+.team-detail__empty::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, var(--surface-card) 42%, transparent 43%),
+    var(--secondary-light-3, #c5d1df);
+  opacity: 0.6;
+}
 
 /* Filter / sort bars */
 .td-filter {
@@ -1713,21 +1749,44 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   height: 36px;
 }
 
-/* Player stats table */
-.team-detail__table-wrap { overflow-x: auto; }
-.team-detail__table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.team-detail__table th, .team-detail__table td { padding: 8px 6px; text-align: center; white-space: nowrap; }
-.team-detail__table th { color: var(--secondary); font-weight: 600; border-bottom: 1px solid var(--border-divider); font-size: 0.72rem; text-transform: uppercase; }
-.team-detail__table td { border-bottom: 1px solid var(--border-divider); color: var(--text); font-variant-numeric: tabular-nums; }
+/* Stat tables — carded, sticky header, zebra rows, leader highlight. */
+.team-detail__table-wrap {
+  overflow: auto;
+  max-height: 62vh;
+  border: 1px solid var(--border-divider);
+  border-radius: 12px;
+  background: var(--surface-card);
+}
+.team-detail__table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
+.team-detail__table th, .team-detail__table td { padding: 10px 8px; text-align: center; white-space: nowrap; }
+.team-detail__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  color: var(--secondary);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--surface-chrome, #fff);
+  border-bottom: 1px solid var(--border-divider);
+}
+.team-detail__table td { border-bottom: 1px solid var(--border-subtle, rgba(207, 220, 234, 0.55)); color: var(--text); font-variant-numeric: tabular-nums; }
+.team-detail__table tbody tr:last-child td { border-bottom: none; }
 .team-detail__table .td-l { text-align: left; }
-.team-detail__table tbody tr:hover { background: var(--surface-pill); }
+/* Zebra striping */
+.team-detail__table tbody tr:nth-child(even) td { background: var(--surface-raised, rgba(240, 246, 253, 0.5)); }
+.team-detail__table tbody tr:hover td { background: var(--primary-light-3, #eef4fd); }
+/* Leader row (top of the sorted player table) */
+.team-detail__table tbody tr.td-leader td { background: rgba(255, 212, 90, 0.14); font-weight: 600; }
+.td-leader-mark { margin-right: 5px; color: var(--warning, #ffd45a); }
 
 /* Team Statistics per-game table */
 .team-detail__stats-table th.td-sortable { cursor: pointer; user-select: none; }
 .team-detail__stats-table th.td-sortable:hover { color: var(--primary); }
 .team-detail__stats-table th.td-sorted { color: var(--primary); }
 .td-sortarrow { margin-left: 2px; }
-.team-detail__stats-table .td-total-row td { background: var(--surface-pill); border-bottom: 2px solid var(--border-divider); }
+.team-detail__stats-table .td-total-row td { position: sticky; top: 36px; z-index: 1; background: var(--surface-pill); border-bottom: 2px solid var(--border-divider); }
 .team-detail__stats-table .td-l { min-width: 190px; }
 .td-game__date { display: block; color: var(--text-light); font-size: 0.72rem; }
 .td-game__line { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; }

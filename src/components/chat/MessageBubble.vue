@@ -142,6 +142,7 @@ onBeforeUnmount(() => {
       />
     </span>
 
+    <div class="bubble-stack" :class="{ 'bubble-stack--own': isOwn }">
     <div
       class="bubble"
       :class="{
@@ -306,30 +307,21 @@ onBeforeUnmount(() => {
         <p v-if="message.content" class="bubble__content">{{ message.content }}</p>
       </template>
 
-      <!-- Reaction chips -->
-      <div v-if="message.reactions.length && !message.isDeleted" class="bubble__reactions">
-        <button
-          v-for="r in message.reactions"
-          :key="r.emoji"
-          type="button"
-          class="bubble__reaction"
-          :class="{ 'bubble__reaction--mine': hasReacted(r) }"
-          :title="`${r.count} reaction${r.count === 1 ? '' : 's'}`"
-          @click.stop="onReact(r.emoji)"
-        >
-          <span class="bubble__reaction-emoji">{{ r.emoji }}</span>
-          <span class="bubble__reaction-count">{{ r.count }}</span>
-        </button>
-      </div>
-
       <span class="bubble__footer">
         <span class="bubble__time">{{ time }}</span>
         <span
           v-if="statusIcon"
-          class="bubble__status"
-          :class="{ 'bubble__status--read': statusIcon === 'read' }"
+          class="bubble__ticks"
+          :class="{ 'bubble__ticks--read': statusIcon === 'read' }"
+          aria-hidden="true"
         >
-          {{ statusIcon === 'sent' ? '✓' : '✓✓' }}
+          <svg v-if="statusIcon === 'sent'" width="15" height="11" viewBox="0 0 15 11">
+            <path d="M2 6.2 5.2 9.2 11.5 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <svg v-else width="18" height="11" viewBox="0 0 18 11">
+            <path d="M1.5 6.2 4.7 9.2 11 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M7.5 9 13.7 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </span>
       </span>
 
@@ -349,6 +341,23 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" class="bubble__confirm-btn bubble__confirm-btn--ghost" @click="closeConfirm">
           Cancel
+        </button>
+      </div>
+    </div>
+
+      <!-- Reaction chips — sit just under the bubble, aligned to its edge. -->
+      <div v-if="message.reactions.length && !message.isDeleted" class="bubble__reactions">
+        <button
+          v-for="r in message.reactions"
+          :key="r.emoji"
+          type="button"
+          class="bubble__reaction"
+          :class="{ 'bubble__reaction--mine': hasReacted(r) }"
+          :title="`${r.count} reaction${r.count === 1 ? '' : 's'}`"
+          @click.stop="onReact(r.emoji)"
+        >
+          <span class="bubble__reaction-emoji">{{ r.emoji }}</span>
+          <span class="bubble__reaction-count">{{ r.count }}</span>
         </button>
       </div>
     </div>
@@ -378,14 +387,26 @@ onBeforeUnmount(() => {
   width: 28px;
 }
 
+/* Bubble + its reactions stacked in a column so chips sit under the bubble. */
+.bubble-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  max-width: min(78%, 560px);
+}
+.bubble-stack--own {
+  align-items: flex-end;
+}
+
 .bubble {
   position: relative;
-  max-width: min(74%, 540px);
-  padding: 7px 11px 5px;
+  max-width: 100%;
+  padding: 7px 11px 6px;
   border-radius: 14px;
   background: var(--surface-pill, rgba(248, 250, 253, 0.94));
-  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
-  box-shadow: 0 1px 1px rgba(36, 60, 91, 0.04);
+  border: none;
+  box-shadow: 0 1px 2px rgba(36, 60, 91, 0.10);
   font-family: var(--font-body);
 }
 
@@ -403,7 +424,6 @@ onBeforeUnmount(() => {
 
 .bubble--own {
   background: var(--primary-light-3, #e5f1ff);
-  border-color: var(--border-accent, rgba(134, 190, 250, 0.65));
 }
 .bubble-row--own .bubble:not(.bubble--first) {
   border-top-right-radius: 4px;
@@ -623,37 +643,47 @@ html.dark-mode .bubble__file-chip {
   font-weight: 400;
 }
 
-.bubble__status {
-  color: var(--text-light, #787f8d);
-  font-size: 0.72rem;
-  font-weight: 400;
-  line-height: 1;
+.bubble__ticks {
+  display: inline-flex;
+  align-items: center;
+  color: var(--secondary, #2f5f98);
+  opacity: 0.75;
 }
-
-.bubble__status--read {
+.bubble__ticks svg {
+  display: block;
+}
+.bubble__ticks--read {
   color: var(--primary, #2d8cf0);
+  opacity: 1;
 }
 
 /* ── Emoji reactions ───────────────────────────────────────────────────────── */
+/* Reaction chips float just under the bubble (WhatsApp-style), overlapping
+   its bottom edge slightly, on a light surface so they read on any bubble. */
 .bubble__reactions {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 5px;
+  margin-top: -8px;
+  padding: 0 6px;
 }
 .bubble__reaction {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  height: 22px;
+  height: 20px;
   padding: 0 7px;
   border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
   border-radius: 999px;
   background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
+  box-shadow: 0 1px 3px rgba(36, 60, 91, 0.16);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: transform 120ms ease, border-color 120ms ease;
 }
 .bubble__reaction:hover {
+  transform: translateY(-1px);
   border-color: var(--primary-light-2, #c9e1fc);
 }
 .bubble__reaction--mine {
@@ -661,13 +691,13 @@ html.dark-mode .bubble__file-chip {
   border-color: var(--primary, #2d8cf0);
 }
 .bubble__reaction-emoji {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 .bubble__reaction-count {
   color: var(--text-light, #787f8d);
-  font-size: 0.7rem;
-  font-weight: 500;
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 .bubble__reaction--mine .bubble__reaction-count {
   color: var(--primary, #2d8cf0);
