@@ -404,6 +404,17 @@ export const useChatStore = defineStore('chat', {
       s.on('message-error', (p: { message?: string }) => {
         console.warn('[chat] message-error', p?.message)
       })
+
+      s.on(
+        'message.reaction',
+        (p: {
+          conversation_id: string
+          message_id: string
+          reactions?: { emoji: string; count: number; userChatIds?: string[] }[]
+        }) => {
+          this.applyReaction(p.conversation_id, p.message_id, p.reactions ?? [])
+        }
+      )
     },
 
     // ── Conversations (cache-first) ─────────────────────────────────────────
@@ -578,7 +589,8 @@ export const useChatStore = defineStore('chat', {
         createdAt: now,
         status: 'sent',
         deliveredTo: [],
-        readBy: []
+        readBy: [],
+        reactions: []
       }
       this.appendMessage(id, temp)
       void upsertCachedMessage(temp)
@@ -634,7 +646,8 @@ export const useChatStore = defineStore('chat', {
         createdAt: now,
         status: 'sent',
         deliveredTo: [],
-        readBy: []
+        readBy: [],
+        reactions: []
       }
       this.appendMessage(id, temp)
 
@@ -976,6 +989,39 @@ export const useChatStore = defineStore('chat', {
         } else {
           void bulkMarkDeliveredRest(toAck).catch(() => undefined)
         }
+      }
+    },
+
+    // Replace a message's reaction summary with the authoritative one the
+    // gateway broadcasts (after Laravel persists the toggle).
+    applyReaction(
+      conversationId: string,
+      messageId: string,
+      reactions: { emoji: string; count: number; userChatIds?: string[] }[]
+    ) {
+      const list = this.messagesByConversation[conversationId]
+      if (!list) return
+      const msg = list.find((m) => m.id === String(messageId))
+      if (!msg) return
+      msg.reactions = reactions
+        .filter((r) => !!r.emoji && (r.count ?? 0) > 0)
+        .map((r) => ({
+          emoji: r.emoji,
+          count: r.count ?? 0,
+          userChatIds: (r.userChatIds ?? []).map((id) => String(id))
+        }))
+      void upsertCachedMessage(msg)
+    },
+
+    // Toggle an emoji reaction on a message (add/remove) via the socket. The
+    // gateway persists to Laravel and broadcasts message.reaction back.
+    reactMessage(conversationId: string, messageId: string, emoji: string) {
+      if (socket && socket.connected) {
+        socket.emit('react-message', {
+          conversation_id: conversationId,
+          message_id: messageId,
+          emoji
+        })
       }
     },
 

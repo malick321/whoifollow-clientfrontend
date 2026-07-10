@@ -74,7 +74,14 @@ export function adaptMessage(raw: ApiMessage): ChatMessage {
     createdAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
     status: normalizeStatus(raw.status),
     deliveredTo: (raw.deliveredTo ?? []).map((id) => strOr(id)),
-    readBy: (raw.readBy ?? []).map((id) => strOr(id))
+    readBy: (raw.readBy ?? []).map((id) => strOr(id)),
+    reactions: (raw.reactions ?? [])
+      .map((r) => ({
+        emoji: r.emoji ?? '',
+        count: r.count ?? 0,
+        userChatIds: (r.userChatIds ?? []).map((id) => strOr(id))
+      }))
+      .filter((r) => r.emoji !== '')
   }
 }
 

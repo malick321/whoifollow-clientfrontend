@@ -4,7 +4,8 @@ import AppIcon from '../AppIcon.vue'
 import TeamAvatar from '../TeamAvatar.vue'
 import { getAuthUserChatId } from '../../auth-session'
 import { formatTime, formatFileSize, isAudioFile, isImageFile, isVideoFile } from './chat-format'
-import type { ChatMessage } from '../../api/chat'
+import { useChatStore } from '../../stores/chat'
+import type { ChatMessage, ChatMessageReaction } from '../../api/chat'
 
 const props = defineProps<{
   message: ChatMessage
@@ -44,6 +45,24 @@ const canDeleteForEveryone = computed(
 )
 // "Message Info" matters for the viewer's own messages (where ticks live).
 const showMessageInfo = computed(() => isOwn.value && !props.message.isDeleted)
+
+// ── Emoji reactions ────────────────────────────────────────────────────────
+const store = useChatStore()
+const myChatId = computed(() => getAuthUserChatId())
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+const pickerOpen = ref(false)
+function togglePicker() {
+  pickerOpen.value = !pickerOpen.value
+  menuOpen.value = false
+}
+function onReact(emoji: string) {
+  pickerOpen.value = false
+  menuOpen.value = false
+  store.reactMessage(props.message.conversationId, props.message.id, emoji)
+}
+function hasReacted(r: ChatMessageReaction): boolean {
+  return r.userChatIds.includes(myChatId.value)
+}
 
 // ── Action menu + delete confirm ───────────────────────────────────────────
 const menuOpen = ref(false)
@@ -95,6 +114,7 @@ function onDeleteForEveryone() {
 // Dismiss menu / confirm on outside interaction.
 function onDocPointer() {
   if (menuOpen.value) menuOpen.value = false
+  if (pickerOpen.value) pickerOpen.value = false
 }
 if (typeof document !== 'undefined') {
   document.addEventListener('click', onDocPointer)
@@ -142,7 +162,23 @@ onBeforeUnmount(() => {
           <AppIcon name="ellipsis" :size="16" />
         </button>
 
+        <!-- Emoji reaction picker -->
+        <div v-if="pickerOpen" class="bubble__picker" role="menu">
+          <button
+            v-for="emoji in REACTION_EMOJIS"
+            :key="emoji"
+            type="button"
+            class="bubble__picker-emoji"
+            :aria-label="`React ${emoji}`"
+            @click="onReact(emoji)"
+          >{{ emoji }}</button>
+        </div>
+
         <div v-if="menuOpen" class="bubble__menu" role="menu">
+          <button type="button" class="bubble__menu-item" role="menuitem" @click="togglePicker">
+            <AppIcon name="like" :size="16" />
+            <span>React</span>
+          </button>
           <button type="button" class="bubble__menu-item" role="menuitem" @click="onReply">
             <AppIcon name="message" :size="16" />
             <span>Reply</span>
@@ -269,6 +305,22 @@ onBeforeUnmount(() => {
 
         <p v-if="message.content" class="bubble__content">{{ message.content }}</p>
       </template>
+
+      <!-- Reaction chips -->
+      <div v-if="message.reactions.length && !message.isDeleted" class="bubble__reactions">
+        <button
+          v-for="r in message.reactions"
+          :key="r.emoji"
+          type="button"
+          class="bubble__reaction"
+          :class="{ 'bubble__reaction--mine': hasReacted(r) }"
+          :title="`${r.count} reaction${r.count === 1 ? '' : 's'}`"
+          @click.stop="onReact(r.emoji)"
+        >
+          <span class="bubble__reaction-emoji">{{ r.emoji }}</span>
+          <span class="bubble__reaction-count">{{ r.count }}</span>
+        </button>
+      </div>
 
       <span class="bubble__footer">
         <span class="bubble__time">{{ time }}</span>
@@ -580,6 +632,75 @@ html.dark-mode .bubble__file-chip {
 
 .bubble__status--read {
   color: var(--primary, #2d8cf0);
+}
+
+/* ── Emoji reactions ───────────────────────────────────────────────────────── */
+.bubble__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.bubble__reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 999px;
+  background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.bubble__reaction:hover {
+  border-color: var(--primary-light-2, #c9e1fc);
+}
+.bubble__reaction--mine {
+  background: var(--primary-light-3, #e5f1ff);
+  border-color: var(--primary, #2d8cf0);
+}
+.bubble__reaction-emoji {
+  font-size: 0.82rem;
+  line-height: 1;
+}
+.bubble__reaction-count {
+  color: var(--text-light, #787f8d);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.bubble__reaction--mine .bubble__reaction-count {
+  color: var(--primary, #2d8cf0);
+}
+
+/* Emoji picker popover */
+.bubble__picker {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: var(--surface-opaque, rgba(255, 255, 255, 0.98));
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  box-shadow: var(--shadow, 0 10px 24px rgba(36, 60, 91, 0.08));
+}
+.bubble__picker-emoji {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.bubble__picker-emoji:hover {
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+  transform: scale(1.2);
 }
 
 /* ── Action menu ─────────────────────────────────────────────────────────── */

@@ -105,6 +105,13 @@ export interface ApiMessage {
   status?: 'sent' | 'delivered' | 'read' | string | null
   deliveredTo?: string[] | null
   readBy?: string[] | null
+  reactions?: ApiMessageReaction[] | null
+}
+
+export interface ApiMessageReaction {
+  emoji?: string | null
+  count?: number | null
+  userChatIds?: string[] | null
 }
 
 export interface ApiSharedFile {

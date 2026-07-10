@@ -77,6 +77,14 @@ export interface ChatMessage {
   status: ChatMessageStatus
   deliveredTo: string[]
   readBy: string[]
+  /** Emoji reaction summary, grouped by emoji. */
+  reactions: ChatMessageReaction[]
+}
+
+export interface ChatMessageReaction {
+  emoji: string
+  count: number
+  userChatIds: string[]
 }
 
 export interface ChatTeamRef {
