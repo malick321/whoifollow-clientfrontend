@@ -136,6 +136,8 @@ const router = createRouter({
     { path: '/shop/checkout', name: 'shop-checkout', component: ShopCheckoutView },
     { path: '/shop/thanks', name: 'shop-thanks', component: ShopOrderConfirmationView },
     { path: '/opinions', name: 'opinions', component: () => import('./views/OpinionsView.vue') },
+    // Go Pro — subscription upgrade (Stripe hosted pricing-table, mirrors legacy).
+    { path: '/go-pro', name: 'go-pro', component: () => import('./views/GoProView.vue') },
     // Player Passport — verified career batting stats (freemium consumer surface).
     { path: '/players/:playerId', name: 'player-passport', component: () => import('./views/PlayerPassportView.vue') },
     { path: '/my/stats', name: 'my-stats', component: () => import('./views/PlayerPassportView.vue') },

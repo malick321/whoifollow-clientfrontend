@@ -10,7 +10,7 @@
 // to a small camelCase `ChatFriend` domain shape, resolving the avatar URL via
 // the shared CDN helper (which passes already-absolute URLs through unchanged).
 
-import { getLegacyJson } from './client'
+import { getLegacyJson, postJson } from './client'
 import { buildUserAvatarUrl } from './config'
 
 /** A friend option as consumed by the team add / invite friend pickers.
@@ -88,4 +88,99 @@ export async function fetchFriends(search = ''): Promise<ChatFriend[]> {
     }
     return []
   }
+}
+
+// ── Invite a friend to join the platform ────────────────────────────
+// Faithful rebuild of the legacy "Invite Friend to join Who I Follow" modal,
+// backed by `POST /v2/friends/invite` (wraps legacy /invite/sendSocialInvite —
+// Email via Mailable + SMS via Twilio). Contract: docs/api/invite-friend-api-contract.md.
+
+/** Friend-connection state of an already-registered invitee, mirroring the
+ *  legacy `friend_status` codes so the modal can offer the right action. */
+export type FriendStatus = 0 | 1 | 3 // 0 = not friends, 1 = friends, 3 = request pending
+
+/** The minimal invitee profile returned when the target is already registered. */
+export interface InvitedFriendSummary {
+  id: string | null
+  name: string
+  avatarUrl: string | null
+  userLink: string | null
+}
+
+/** What the caller sends. At least one of `phone` / `email` must be present
+ *  (the modal enforces this before calling). */
+export interface InviteFriendPayload {
+  countryCode?: string
+  phone?: string
+  email?: string
+}
+
+/** Discriminated result of an invite attempt:
+ *  - `sent`               — invitation delivered.
+ *  - `already_registered` — target already has an account; carries their
+ *                           friend-connection status + a profile summary.
+ *  - `blocked`            — a soft business rejection (already invited, can't
+ *                           invite yourself, …); `message` is display-ready. */
+export type InviteFriendResult =
+  | { outcome: 'sent'; message: string }
+  | {
+      outcome: 'already_registered'
+      message: string
+      friendStatus: FriendStatus
+      user: InvitedFriendSummary | null
+    }
+  | { outcome: 'blocked'; message: string }
+
+interface RawInvitedUser {
+  id?: string | null
+  name?: string | null
+  avatarUrl?: string | null
+  userLink?: string | null
+}
+
+interface InviteEnvelope {
+  responseStatus?: { message?: string | null; statusCode?: number | null } | null
+  data?: {
+    outcome?: string | null
+    message?: string | null
+    friendStatus?: number | null
+    user?: RawInvitedUser | null
+  } | null
+}
+
+function adaptInvitedUser(raw: RawInvitedUser | null | undefined): InvitedFriendSummary | null {
+  if (!raw) return null
+  return {
+    id: raw.id != null ? String(raw.id) : null,
+    name: raw.name?.trim() || 'Member',
+    avatarUrl: buildUserAvatarUrl(raw.avatarUrl ?? undefined) ?? null,
+    userLink: raw.userLink ?? null
+  }
+}
+
+/** Send a platform invite by phone (with country code) and/or email.
+ *  Resolves to a discriminated `InviteFriendResult`; throws only on genuine
+ *  transport / server errors (the expected business outcomes come back as data). */
+export async function inviteFriend(payload: InviteFriendPayload): Promise<InviteFriendResult> {
+  const body = {
+    email: payload.email?.trim() || '',
+    number: payload.phone?.trim() || '',
+    countryCode: payload.countryCode?.trim() || '+1'
+  }
+  const envelope = await postJson<InviteEnvelope>('/friends/invite', body)
+  const data = envelope?.data ?? null
+  const message = (data?.message ?? envelope?.responseStatus?.message ?? '').trim()
+
+  if (data?.outcome === 'already_registered') {
+    return {
+      outcome: 'already_registered',
+      message: message || 'This person is already on Who I Follow.',
+      friendStatus: (data.friendStatus ?? 0) as FriendStatus,
+      user: adaptInvitedUser(data.user)
+    }
+  }
+  if (data?.outcome === 'blocked') {
+    return { outcome: 'blocked', message: message || 'Invitation could not be sent.' }
+  }
+  return { outcome: 'sent', message: message || 'Invitation has been sent successfully.' }
 }

@@ -12,7 +12,7 @@
 // Data: src/api/playerPassport.ts. Contract: docs/api/player-passport-api-contract.md.
 
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import { getAuthUserId } from '../auth-session'
 import { pushToast } from '../toast-center'
@@ -30,6 +30,7 @@ import {
 } from '../api/playerPassport'
 
 const route = useRoute()
+const router = useRouter()
 const isDev = import.meta.env.DEV
 
 const playerId = computed<string>(() => {
@@ -125,7 +126,8 @@ function goPro() {
     previewPro.value = true
     return
   }
-  pushToast({ tone: 'success', title: 'Player Pro', message: 'Player Pro checkout is coming soon.' })
+  // Route to the shared Go Pro upgrade page (Stripe pricing table).
+  router.push('/go-pro')
 }
 
 onMounted(loadAll)

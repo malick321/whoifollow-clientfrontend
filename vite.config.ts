@@ -6,7 +6,18 @@ export default defineConfig({
   // Expose VITE_* (default) plus the un-prefixed GOOGLE_MAPS_API_KEY to
   // client code via import.meta.env.
   envPrefix: ['VITE_', 'GOOGLE_MAPS_API_KEY'],
-  plugins: [vue()],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          // Stripe's hosted <stripe-pricing-table> (Go Pro) is a web component,
+          // not a Vue component — tell the compiler so it doesn't warn / try to
+          // resolve it.
+          isCustomElement: (tag) => tag === 'stripe-pricing-table'
+        }
+      }
+    })
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

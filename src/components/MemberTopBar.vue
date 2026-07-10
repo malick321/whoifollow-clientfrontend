@@ -26,6 +26,7 @@ import {
 } from '../auth-session'
 import { fetchCurrentUser } from '../api/me'
 import { openLoginModal } from '../login-modal-center'
+import { openInviteModal } from '../invite-modal-center'
 import { useShopCartStore } from '../stores/shopCart'
 import { pushToast } from '../toast-center'
 import { themeMode, toggleTheme } from '../theme'
@@ -182,7 +183,15 @@ watch(isAuthenticated, (authenticated) => {
           <img :src="associationIcon" alt="" class="nav-ico" />
           <span class="member-topbar__assoc-label">Association</span>
         </button>
-        <button type="button" class="member-topbar__gopro" @click="comingSoon('Go Pro')">
+        <button type="button" class="member-topbar__invite" aria-label="Invite a friend" @click="openInviteModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" />
+          </svg>
+          <span class="member-topbar__invite-label">Invite</span>
+        </button>
+        <button type="button" class="member-topbar__gopro" @click="router.push('/go-pro')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M5 16L3 5l5.5 4L12 4l3.5 5L21 5l-2 11H5zm0 2h14v2H5v-2z" />
           </svg>
@@ -406,6 +415,24 @@ watch(isAuthenticated, (authenticated) => {
 .member-topbar__assoc:hover {
   border-color: var(--primary, #2d8cf0);
 }
+.member-topbar__invite {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 999px;
+  background: var(--surface-card, #fff);
+  color: var(--secondary, #2f5f98);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.member-topbar__invite:hover {
+  border-color: var(--primary, #2d8cf0);
+}
 .member-topbar__gopro {
   display: inline-flex;
   align-items: center;
@@ -561,7 +588,8 @@ watch(isAuthenticated, (authenticated) => {
    (it's the only home for My Life / Tasks / Opinions). */
 @media (max-width: 880px) {
   .member-topbar__item-label,
-  .member-topbar__assoc-label {
+  .member-topbar__assoc-label,
+  .member-topbar__invite-label {
     display: none;
   }
 }

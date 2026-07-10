@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { authEmail, clearAuthSession, isAuthenticated } from './auth-session'
 import LoginModal from './components/LoginModal.vue'
+import InviteFriendModal from './components/InviteFriendModal.vue'
 import ThemeToggle from './components/ThemeToggle.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import MemberTopBar from './components/MemberTopBar.vue'
@@ -229,6 +230,9 @@ onBeforeUnmount(() => {
     </div>
 
     <LoginModal />
+
+    <!-- Global "Invite Friend to join Who I Follow" slide-over. -->
+    <InviteFriendModal />
 
     <!-- App-wide confirmation dialog (replaces native window.confirm). -->
     <ConfirmDialog />
