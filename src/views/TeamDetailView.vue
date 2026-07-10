@@ -1050,6 +1050,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   gap: 16px;
 }
 
+.team-detail__hero {
+  overflow: visible !important;
+  position: relative;
+  z-index: 20;
+}
+
 /* Hero — layout handled by the global `.hero` / `.hero__main` / `.hero-status`
    design system; only the extras below are local. */
 .team-detail__back {
@@ -1078,6 +1084,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 /* Tabs */
 .team-detail__tabs {
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: 4px;
   overflow-x: auto;
