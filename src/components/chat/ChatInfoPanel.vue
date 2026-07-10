@@ -43,6 +43,7 @@ import {
   type ChatTeamSettings
 } from '../../api/chat'
 import { pushToast } from '../../toast-center'
+import { getLegacyJson } from '../../api/client'
 import { confirmDialog } from '../../confirm-center'
 
 const props = defineProps<{
@@ -259,6 +260,75 @@ function openTeamDetail(tab?: 'events' | 'teammates' | 'player-stats' | 'team-st
 
 function openStatistics() {
   openTeamDetail('team-stats')
+}
+
+// Ongoing/upcoming event card → open the team's Events (legacy opened event
+// details on click; the new home for that is the Team Detail Events tab).
+function openEvent() {
+  openTeamDetail('events')
+}
+
+// ── Registered associations (legacy in-panel list) ───────────────────────────
+// Mirrors the legacy Associations.vue: expanding "Associations" lists the team's
+// registered associations (name, reg #, status, registered team, manager,
+// valid-thru) — NOT a jump to Team Detail. Reuses the legacy list endpoint.
+interface TeamAssociationRow {
+  key: string
+  fullName: string
+  registrationNo: string | null
+  status: 'pending' | 'active' | 'expired' | 'rejected' | 'suspended' | 'unknown'
+  registeredTeamName: string | null
+  managerName: string | null
+  validThru: string | null
+}
+const ASSOC_STATUS: Record<number, TeamAssociationRow['status']> = {
+  0: 'pending', 1: 'active', 2: 'expired', 3: 'rejected', 4: 'suspended'
+}
+const openAssociations = ref(false)
+const associations = ref<TeamAssociationRow[]>([])
+const associationsLoaded = ref(false)
+const associationsLoading = ref(false)
+
+function formatAssocDate(raw: string | null): string | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+async function loadAssociations() {
+  if (!teamId.value) return
+  associationsLoading.value = true
+  try {
+    const res = await getLegacyJson<{
+      data?: { associations?: Array<Record<string, unknown>> } | null
+    }>(`/associationTeams/getTeamAssociations?team_id=${encodeURIComponent(teamId.value)}`)
+    const rows = res?.data?.associations ?? []
+    associations.value = rows.map((r, i) => {
+      const assoc = (r.association ?? {}) as Record<string, unknown>
+      const statusNum = Number(r.registration_status)
+      return {
+        key: String(r.id ?? i),
+        fullName: String(assoc.full_name ?? assoc.name ?? 'Association'),
+        registrationNo: r.registration_no ? String(r.registration_no) : null,
+        status: ASSOC_STATUS[statusNum] ?? 'unknown',
+        registeredTeamName: r.registered_team_name ? String(r.registered_team_name) : null,
+        managerName: r.manager_name ? String(r.manager_name) : null,
+        validThru: formatAssocDate((r.expiry_date as string) ?? null)
+      }
+    })
+    associationsLoaded.value = true
+  } catch {
+    associations.value = []
+    associationsLoaded.value = true
+  } finally {
+    associationsLoading.value = false
+  }
+}
+
+function toggleAssociations() {
+  openAssociations.value = !openAssociations.value
+  if (openAssociations.value && !associationsLoaded.value) void loadAssociations()
 }
 
 // ── Collapsible rows + shared files ──────────────────────────────
@@ -678,8 +748,8 @@ watch(teamId, () => {
           </div>
         </div>
 
-        <!-- Ongoing event card -->
-        <div v-if="ongoingEvent" class="event-card">
+        <!-- Ongoing event card (clickable → team events) -->
+        <div v-if="ongoingEvent" class="event-card event-card--clickable" role="button" tabindex="0" @click="openEvent" @keydown.enter="openEvent">
           <div class="event-card__top">
             <span class="event-card__badge">{{ ongoingEvent.status || 'Ongoing' }}</span>
             <span v-if="eventDateLine" class="event-card__dates">{{ eventDateLine }}</span>
@@ -707,11 +777,32 @@ watch(teamId, () => {
             <span class="info-row__count">{{ counts.allEvents }}</span>
             <span class="info-row__chevron">›</span>
           </button>
-          <button type="button" class="info-row" @click="openTeamDetail()">
+          <button
+            type="button"
+            class="info-row"
+            :aria-expanded="openAssociations"
+            @click="toggleAssociations"
+          >
             <span class="info-row__label">Associations</span>
             <span class="info-row__count">{{ counts.associations }}</span>
-            <span class="info-row__chevron">›</span>
+            <span class="info-row__chevron" :class="{ 'info-row__chevron--open': openAssociations }">›</span>
           </button>
+          <div v-if="openAssociations" class="info-row__sub">
+            <p v-if="associationsLoading" class="info-row__hint">Loading…</p>
+            <p v-else-if="!associations.length" class="info-row__hint">No associations for this team.</p>
+            <div v-for="a in associations" :key="a.key" class="assoc-card">
+              <div class="assoc-card__head">
+                <span class="assoc-card__name">{{ a.fullName }}</span>
+                <span class="assoc-card__status" :data-status="a.status">{{ a.status }}</span>
+              </div>
+              <span v-if="a.registrationNo" class="assoc-card__reg">Reg #{{ a.registrationNo }}</span>
+              <span v-if="a.registeredTeamName" class="assoc-card__line">{{ a.registeredTeamName }}</span>
+              <div class="assoc-card__foot">
+                <span v-if="a.managerName"><b>Manager</b> {{ a.managerName }}</span>
+                <span v-if="a.validThru"><b>Valid thru</b> {{ a.validThru }}</span>
+              </div>
+            </div>
+          </div>
 
           <button
             type="button"
@@ -1124,7 +1215,64 @@ watch(teamId, () => {
   font-weight: 400;
 }
 
+/* Registered-association cards (legacy in-panel Associations list) */
+.assoc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 12px;
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+  border-radius: 10px;
+  background: var(--surface-raised, rgba(240, 246, 253, 0.6));
+}
+.assoc-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.assoc-card__name {
+  color: var(--text, #2e3137);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.assoc-card__status {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+  color: var(--text-light, #787f8d);
+}
+.assoc-card__status[data-status='active'] { background: var(--success-light, #d9f8e2); color: #16763a; }
+.assoc-card__status[data-status='pending'] { background: var(--light-warning, #fff8ea); color: #8c6500; }
+.assoc-card__status[data-status='expired'],
+.assoc-card__status[data-status='rejected'],
+.assoc-card__status[data-status='suspended'] { background: var(--danger-light, #ffd8dd); color: #aa2b37; }
+.assoc-card__reg { color: var(--secondary, #2f5f98); font-size: 0.76rem; font-weight: 500; }
+.assoc-card__line { color: var(--text-light, #787f8d); font-size: 0.78rem; }
+.assoc-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 2px;
+  color: var(--text-light, #787f8d);
+  font-size: 0.74rem;
+}
+.assoc-card__foot b { color: var(--text, #2e3137); font-weight: 600; margin-right: 4px; }
+
 /* Ongoing event card */
+.event-card--clickable {
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.event-card--clickable:hover {
+  border-color: var(--primary-light-2, #c9e1fc);
+  transform: translateY(-1px);
+}
 .event-card {
   display: flex;
   flex-direction: column;
