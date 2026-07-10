@@ -565,10 +565,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       <div class="hero-status">
         <div ref="settingsWrap" class="team-detail__hero-actions" @click.stop>
           <button type="button" class="td-hero-btn" @click="openTeamMessage">
-            <AppIcon name="message" :size="14" /> Message Team
+            <span class="td-asset-icon td-asset-icon--chat" aria-hidden="true"></span>
+            <span>Message Team</span>
           </button>
           <button type="button" class="td-hero-btn" :class="{ 'is-active': settingsOpen }" @click="openTeamSettings">
-            <AppIcon name="ellipsis" :size="15" /> Settings
+            <span class="td-asset-icon td-asset-icon--settings" aria-hidden="true"></span>
+            <span>Settings</span>
           </button>
           <div v-if="settingsOpen" class="td-settings-menu">
             <div class="td-settings-menu__section">
@@ -717,8 +719,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <div v-if="members.length" class="td-members-head">
           <span class="td-members-count">{{ filteredMembers.length }} {{ filteredMembers.length === 1 ? 'Teammate' : 'Teammates' }}</span>
           <div class="td-members-actions">
-            <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
-            <button type="button" class="td-toolbar-btn" @click="printTeamInfo">Print Team Info</button>
+            <label class="td-search-wrap">
+              <AppIcon name="search" :size="15" />
+              <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
+            </label>
+            <button type="button" class="td-toolbar-btn" @click="printTeamInfo">
+              <span class="td-asset-icon td-asset-icon--print" aria-hidden="true"></span>
+              <span>Print Team Info</span>
+            </button>
+            <button type="button" class="td-toolbar-btn" @click="inviteOpen = true">
+              <span class="td-asset-icon td-asset-icon--invite" aria-hidden="true"></span>
+              <span>Invite To Team</span>
+            </button>
           </div>
         </div>
         <div v-if="members.length" class="td-filter">
@@ -1133,6 +1145,35 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 .td-hero-btn:hover,
 .td-hero-btn.is-active { color: var(--primary); border-color: var(--border-accent-hover, var(--primary-light-2)); }
+.td-asset-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: inline-block;
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.td-asset-icon--chat {
+  -webkit-mask-image: url('../assets/chat.svg');
+  mask-image: url('../assets/chat.svg');
+}
+.td-asset-icon--settings {
+  -webkit-mask-image: url('../assets/settings.svg');
+  mask-image: url('../assets/settings.svg');
+}
+.td-asset-icon--invite {
+  -webkit-mask-image: url('../assets/add-user.svg');
+  mask-image: url('../assets/add-user.svg');
+}
+.td-asset-icon--print {
+  -webkit-mask-image: url('../assets/print.svg');
+  mask-image: url('../assets/print.svg');
+}
 .td-settings-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -1230,19 +1271,40 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--primary);
 }
 .td-search {
-  flex: 0 1 220px;
+  flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
   height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border-divider);
-  border-radius: 8px;
-  background: var(--surface-card);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 0.84rem;
   outline: none;
 }
-.td-search:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light-3); }
+.td-search-wrap {
+  flex: 1 1 260px;
+  min-width: 180px;
+  max-width: 360px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+  color: var(--secondary);
+}
+.td-search-wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light-3);
+}
+.td-search-wrap:focus-within .app-icon {
+  color: var(--primary);
+}
 
 /* Skeletons (shimmer comes from the global .shimmer-block / .shimmer-circle) */
 .td-sk__avatar { width: 56px; height: 56px; border-radius: 999px; display: block; }
@@ -1300,7 +1362,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .td-member__role { color: var(--secondary); font-size: 0.76rem; }
 .td-member__uniform { color: var(--text-light); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .td-members-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.td-members-count { color: var(--text); font-weight: 500; font-size: 0.95rem; }
+.td-members-count { flex: 0 0 auto; color: var(--text); font-weight: 500; font-size: 0.95rem; }
 .td-members-actions {
   display: flex;
   align-items: center;
@@ -1312,6 +1374,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 .td-toolbar-btn {
   min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 0 0 auto;
   white-space: nowrap;
   padding: 0 11px;
   border: 1px solid var(--border-divider);
