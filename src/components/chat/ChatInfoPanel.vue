@@ -314,6 +314,14 @@ function toggleTeammates() {
 const sharedFilesCount = computed(() =>
   filesLoaded.value ? sharedFiles.value.length : counts.value.sharedFiles
 )
+// Split shared files into a media grid (images) + a documents list so the
+// panel reads like a real "Media & Files" gallery rather than a flat list.
+function isImageFile(f: ChatSharedFile): boolean {
+  if (f.type && f.type.toLowerCase().startsWith('image/')) return true
+  return /\.(png|jpe?g|gif|webp|bmp|heic|avif)$/i.test(f.name || '')
+}
+const sharedImages = computed(() => sharedFiles.value.filter((f) => isImageFile(f) && !!f.url))
+const sharedDocs = computed(() => sharedFiles.value.filter((f) => !isImageFile(f)))
 function dedupeMembers(rows: ChatTeamMember[]): ChatTeamMember[] {
   const seen = new Set<string>()
   return rows.filter((m) => {
@@ -800,23 +808,40 @@ watch(teamId, () => {
             :aria-expanded="openFiles"
             @click="toggleFiles"
           >
-            <span class="info-row__label">Shared Files</span>
+            <span class="info-row__label">Media &amp; Files</span>
             <span class="info-row__count">{{ sharedFilesCount }}</span>
             <span class="info-row__chevron" :class="{ 'info-row__chevron--open': openFiles }">›</span>
           </button>
-          <ul v-if="openFiles" class="info-row__sub">
-            <li v-if="filesLoading" class="info-row__hint">Loading…</li>
-            <li v-else-if="!sharedFiles.length" class="info-row__hint">No shared files.</li>
-            <li v-for="f in sharedFiles" :key="f.messageId" class="shared-file">
-              <a :href="f.url || undefined" target="_blank" rel="noopener" class="shared-file__link">
-                <AppIcon name="document" :size="18" />
-                <span class="shared-file__meta">
-                  <span class="shared-file__name">{{ f.name }}</span>
-                  <span v-if="f.size" class="shared-file__size">{{ formatFileSize(f.size) }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
+          <div v-if="openFiles" class="info-row__sub">
+            <p v-if="filesLoading" class="info-row__hint">Loading…</p>
+            <p v-else-if="!sharedFiles.length" class="info-row__hint">No shared media or files yet.</p>
+            <template v-else>
+              <div v-if="sharedImages.length" class="chat-media-grid">
+                <a
+                  v-for="img in sharedImages"
+                  :key="img.messageId"
+                  :href="img.url || undefined"
+                  target="_blank"
+                  rel="noopener"
+                  class="chat-media-grid__item"
+                  :title="img.name"
+                >
+                  <img :src="img.url" :alt="img.name" loading="lazy" />
+                </a>
+              </div>
+              <ul v-if="sharedDocs.length" class="shared-file-list">
+                <li v-for="f in sharedDocs" :key="f.messageId" class="shared-file">
+                  <a :href="f.url || undefined" target="_blank" rel="noopener" class="shared-file__link">
+                    <AppIcon name="document" :size="18" />
+                    <span class="shared-file__meta">
+                      <span class="shared-file__name">{{ f.name }}</span>
+                      <span v-if="f.size" class="shared-file__size">{{ formatFileSize(f.size) }}</span>
+                    </span>
+                  </a>
+                </li>
+              </ul>
+            </template>
+          </div>
         </div>
       </template>
 
@@ -833,23 +858,40 @@ watch(teamId, () => {
             :aria-expanded="openFiles"
             @click="toggleFiles"
           >
-            <span class="info-row__label">Shared Files</span>
+            <span class="info-row__label">Media &amp; Files</span>
             <span v-if="filesLoaded" class="info-row__count">{{ sharedFiles.length }}</span>
             <span class="info-row__chevron" :class="{ 'info-row__chevron--open': openFiles }">›</span>
           </button>
-          <ul v-if="openFiles" class="info-row__sub">
-            <li v-if="filesLoading" class="info-row__hint">Loading…</li>
-            <li v-else-if="!sharedFiles.length" class="info-row__hint">No shared files.</li>
-            <li v-for="f in sharedFiles" :key="f.messageId" class="shared-file">
-              <a :href="f.url || undefined" target="_blank" rel="noopener" class="shared-file__link">
-                <AppIcon name="document" :size="18" />
-                <span class="shared-file__meta">
-                  <span class="shared-file__name">{{ f.name }}</span>
-                  <span v-if="f.size" class="shared-file__size">{{ formatFileSize(f.size) }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
+          <div v-if="openFiles" class="info-row__sub">
+            <p v-if="filesLoading" class="info-row__hint">Loading…</p>
+            <p v-else-if="!sharedFiles.length" class="info-row__hint">No shared media or files yet.</p>
+            <template v-else>
+              <div v-if="sharedImages.length" class="chat-media-grid">
+                <a
+                  v-for="img in sharedImages"
+                  :key="img.messageId"
+                  :href="img.url || undefined"
+                  target="_blank"
+                  rel="noopener"
+                  class="chat-media-grid__item"
+                  :title="img.name"
+                >
+                  <img :src="img.url" :alt="img.name" loading="lazy" />
+                </a>
+              </div>
+              <ul v-if="sharedDocs.length" class="shared-file-list">
+                <li v-for="f in sharedDocs" :key="f.messageId" class="shared-file">
+                  <a :href="f.url || undefined" target="_blank" rel="noopener" class="shared-file__link">
+                    <AppIcon name="document" :size="18" />
+                    <span class="shared-file__meta">
+                      <span class="shared-file__name">{{ f.name }}</span>
+                      <span v-if="f.size" class="shared-file__size">{{ formatFileSize(f.size) }}</span>
+                    </span>
+                  </a>
+                </li>
+              </ul>
+            </template>
+          </div>
         </div>
       </template>
     </div>
@@ -1379,6 +1421,38 @@ html.dark-mode .event-card__badge {
 .teammate__remove:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+/* Media & Files gallery */
+.chat-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.chat-media-grid__item {
+  position: relative;
+  display: block;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--surface-pill, rgba(248, 250, 253, 0.94));
+  border: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+}
+.chat-media-grid__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 160ms ease;
+}
+.chat-media-grid__item:hover img {
+  transform: scale(1.05);
+}
+.shared-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .shared-file {
