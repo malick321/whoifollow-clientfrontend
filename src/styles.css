@@ -2662,7 +2662,10 @@ html.dark-mode .division-standings__team .team-avatar-mark__initial {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  /* Above the sticky MemberTopBar (z:200) + its account menu (z:210) so the
+     modal's own header/title never renders behind the app chrome. See the
+     app-wide stacking scheme note on `.slide-modal-backdrop`. */
+  z-index: 1200;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -2806,13 +2809,12 @@ html.dark-mode .division-standings__team .team-avatar-mark__initial {
   left: 50%;
   bottom: 24px;
   transform: translateX(-50%);
-  /* Toasts must always paint above every modal — `.slide-modal-backdrop`
-     sits at z:80 and the switcher / confirm panels around z:90. We
-     pick 200 to leave headroom for any future modal stacking without
-     having to rev this value each time. Without this, error toasts
-     emitted from inside a modal (e.g. "Cannot save: …") render
-     UNDER the backdrop and the user never sees them. */
-  z-index: 200;
+  /* Toasts must always paint above every modal. Base modals sit at z:1200,
+     the image editor at 1250 and the confirm dialog at 1290/1300, so toasts
+     take 1400 to stay on top. Without this, error toasts emitted from inside
+     a modal (e.g. "Cannot save: …") render UNDER the backdrop and the user
+     never sees them. */
+  z-index: 1400;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -8230,7 +8232,14 @@ html.dark-mode .map-explorer__wizard .toggle-switch--on .toggle-switch__track {
 .slide-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  /* App-wide modal stacking scheme (all above the MemberTopBar at z:200 and
+     its account menu at z:210, so a modal's title is never clipped behind the
+     app header):
+       base modals (center / drawer / switcher) . 1200
+       image editor (can open from within a modal) 1250
+       confirm dialog (floats above other modals) . 1290/1300 (ConfirmDialog.vue)
+       toasts (always above every modal) ......... 1400 */
+  z-index: 1200;
   display: flex;
   justify-content: flex-end;
   background: rgba(36, 60, 91, 0.45);
@@ -8243,10 +8252,9 @@ html.dark-mode .map-explorer__wizard .toggle-switch--on .toggle-switch__track {
 .association-switcher-backdrop {
   position: fixed;
   inset: 0;
-  /* Above all sticky elements in the main content (whose stacking
-     contexts can otherwise paint above a lower-numbered backdrop
-     when the modal is rendered nested in an unrelated DOM tree). */
-  z-index: 200;
+  /* Above the MemberTopBar (z:200) + account menu (z:210) and all sticky
+     content — part of the base-modal tier (see `.slide-modal-backdrop`). */
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11693,7 +11701,9 @@ html.dark-mode .team-details-page__tab--active .team-details-page__tab-count {
 .image-editor-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 240;
+  /* Above the base-modal tier (1200) so the cropper can open from within a
+     form modal (e.g. EditTeamModal), yet below the confirm dialog (1290). */
+  z-index: 1250;
   display: flex;
   align-items: center;
   justify-content: center;
