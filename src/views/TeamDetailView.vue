@@ -8,12 +8,12 @@
 // Header + Team Statistics reuse fetchTeamDetail; the other tabs lazy-load
 // their own lean v2 endpoints on first activation.
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import EditTeamModal from '../components/chat/EditTeamModal.vue'
 import InviteToTeamModal from '../components/chat/InviteToTeamModal.vue'
-import SlideModal from '../components/SlideModal.vue'
+import MessageComposer from '../components/chat/MessageComposer.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
@@ -22,13 +22,12 @@ import { confirmDialog } from '../confirm-center'
 import {
   archiveTeam,
   fetchTeamDetail,
-  getOrCreateIndividualConversation,
   leaveTeam,
   removeTeamMember,
   reportTeam,
-  sendMessageRest,
   updateTeamMemberRole,
   updateTeamSettings,
+  type ChatMessage,
   type ChatTeamDetail
 } from '../api/chat'
 import {
@@ -44,6 +43,8 @@ import {
   type TeamPlayerStat,
   type TeamStatsFilters
 } from '../api/teamDetail'
+import { useChatStore } from '../stores/chat'
+import { formatFileSize, formatTime, isAudioFile, isImageFile, isVideoFile } from '../components/chat/chat-format'
 import { pushToast } from '../toast-center'
 
 type TabKey = 'events' | 'teammates' | 'player-stats' | 'team-stats'
@@ -56,6 +57,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const route = useRoute()
 const router = useRouter()
+const chatStore = useChatStore()
 const teamId = computed(() => String(route.params.teamId ?? ''))
 
 // Teammate row ellipsis menu (one open at a time; closes on outside click).
@@ -278,6 +280,7 @@ async function setSetting(key: keyof ChatTeamDetail['settings'], value: boolean)
 }
 
 async function printTeamInfo() {
+  settingsOpen.value = false
   const roster = members.value.length ? members.value : await fetchTeamMembers(teamId.value)
   if (!members.value.length) {
     members.value = roster
@@ -399,61 +402,95 @@ async function exitCurrentTeam() {
 }
 
 type MessageTarget =
-  | { type: 'team'; title: string; conversationId: string | null }
-  | { type: 'dm'; title: string; userChatId: string }
+  | { type: 'team'; title: string; conversationId: string | null; avatarUrl: string | null }
+  | { type: 'dm'; title: string; userChatId: string; avatarUrl: string | null }
 
 const messageOpen = ref(false)
 const messageTarget = ref<MessageTarget | null>(null)
-const messageDraft = ref('')
-const messageSending = ref(false)
+const messageConversationId = ref<string | null>(null)
+const messageLoading = ref(false)
+const messageError = ref('')
+const messageBody = ref<HTMLElement | null>(null)
+const widgetMessages = computed<ChatMessage[]>(() =>
+  messageConversationId.value ? (chatStore.messagesByConversation[messageConversationId.value] ?? []) : []
+)
+const widgetIsTeam = computed(() => messageTarget.value?.type === 'team')
+const widgetSubtitle = computed(() =>
+  messageTarget.value?.type === 'team' ? 'Team chat' : 'Direct message'
+)
 
-function openTeamMessage() {
+async function openTeamMessage() {
   messageTarget.value = {
     type: 'team',
     title: detail.value?.name || 'Team',
-    conversationId: detail.value?.conversationId ?? null
+    conversationId: detail.value?.conversationId ?? null,
+    avatarUrl: detail.value?.logoUrl ?? null
   }
-  messageDraft.value = ''
-  messageOpen.value = true
+  await openMessageWidget()
 }
 
-function openMemberMessage(member: TeamMemberItem) {
+async function openMemberMessage(member: TeamMemberItem) {
   if (!member.userChatId) return
   openMemberMenu.value = null
-  messageTarget.value = { type: 'dm', title: member.name, userChatId: member.userChatId }
-  messageDraft.value = ''
-  messageOpen.value = true
+  messageTarget.value = {
+    type: 'dm',
+    title: member.name,
+    userChatId: member.userChatId,
+    avatarUrl: member.avatarUrl ?? null
+  }
+  await openMessageWidget()
 }
 
 async function resolveMessageConversationId(): Promise<string | null> {
   const target = messageTarget.value
   if (!target) return null
   if (target.type === 'team') return target.conversationId
-  const conversation = await getOrCreateIndividualConversation(target.userChatId)
-  return conversation?.id ?? null
+  return chatStore.openIndividualConversation(target.userChatId)
 }
 
-async function sendQuickMessage() {
-  const content = messageDraft.value.trim()
-  if (!content) return
-  messageSending.value = true
+async function openMessageWidget() {
+  messageOpen.value = true
+  messageConversationId.value = null
+  messageError.value = ''
+  messageLoading.value = true
   try {
     const conversationId = await resolveMessageConversationId()
     if (!conversationId) throw new Error('Conversation was not found.')
-    await sendMessageRest(conversationId, { content })
-    pushToast({ tone: 'success', title: 'Message sent' })
-    messageOpen.value = false
-    messageDraft.value = ''
+    messageConversationId.value = conversationId
+    await chatStore.openConversation(conversationId)
+    await scrollMessageWidgetToBottom()
   } catch (error) {
-    pushToast({ tone: 'warning', title: 'Could not send message', message: error instanceof Error ? error.message : 'Please try again.' })
+    messageError.value = error instanceof Error ? error.message : 'Could not open chat.'
   } finally {
-    messageSending.value = false
+    messageLoading.value = false
   }
 }
 
-async function openTargetChat() {
-  const conversationId = await resolveMessageConversationId()
-  if (conversationId) goToChat(conversationId)
+function closeMessageWidget() {
+  messageOpen.value = false
+}
+
+async function scrollMessageWidgetToBottom() {
+  await nextTick()
+  const el = messageBody.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function onWidgetSent() {
+  void scrollMessageWidgetToBottom()
+}
+
+function isOwnMessage(message: ChatMessage): boolean {
+  return message.senderChatId === currentChatId.value
+}
+
+function messageStatusLabel(message: ChatMessage): string {
+  if (!isOwnMessage(message) || message.isDeleted) return ''
+  return message.status === 'sent' ? '✓' : '✓✓'
+}
+
+function openTargetChat() {
+  if (messageConversationId.value) goToChat(messageConversationId.value)
 }
 
 watch(activeTab, (t) => { void loadTab(t) })
@@ -463,6 +500,13 @@ watch([statEvent, statType, statAssoc], () => {
   loaded.value[activeTab.value] = false
   void loadTab(activeTab.value, true)
 })
+
+watch(
+  () => widgetMessages.value[widgetMessages.value.length - 1]?.id,
+  () => {
+    if (messageOpen.value) void scrollMessageWidgetToBottom()
+  }
+)
 
 onMounted(async () => {
   const q = String(route.query.tab ?? '')
@@ -476,6 +520,7 @@ onMounted(async () => {
   detail.value = d
   association.value = a
   loadingHeader.value = false
+  chatStore.connect()
 
   void loadTab(activeTab.value)
   document.addEventListener('click', onDocumentClick)
@@ -523,37 +568,55 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <AppIcon name="message" :size="14" /> Message Team
           </button>
           <button type="button" class="td-hero-btn" :class="{ 'is-active': settingsOpen }" @click="openTeamSettings">
-            Settings
+            <AppIcon name="ellipsis" :size="15" /> Settings
           </button>
           <div v-if="settingsOpen" class="td-settings-menu">
-            <button v-if="detail?.isAdmin" type="button" class="td-settings-menu__item" @click="editOpen = true; settingsOpen = false">
-              <span>Edit Team Details / Logo</span>
-            </button>
-            <button type="button" class="td-settings-menu__item" @click="inviteOpen = true; settingsOpen = false">
-              <span>Invite To Team</span>
-            </button>
-            <button type="button" class="td-settings-menu__item" @click="printTeamInfo">
-              <span>Print Team Info</span>
-            </button>
-            <div class="td-settings-menu__toggle">
-              <span>SMS Notification</span>
-              <ToggleSwitch :model-value="detail?.settings.smsNotification ?? false" @update:model-value="setSetting('smsNotification', $event)" />
+            <div class="td-settings-menu__section">
+              <button v-if="detail?.isAdmin" type="button" class="td-settings-menu__item" @click="editOpen = true; settingsOpen = false">
+                <AppIcon name="text" :size="16" />
+                <span>Edit Team Details / Logo</span>
+              </button>
+              <button type="button" class="td-settings-menu__item" @click="inviteOpen = true; settingsOpen = false">
+                <AppIcon name="people" :size="16" />
+                <span>Invite To Team</span>
+              </button>
+              <button type="button" class="td-settings-menu__item" @click="printTeamInfo">
+                <AppIcon name="document" :size="16" />
+                <span>Print Team Info</span>
+              </button>
             </div>
-            <div class="td-settings-menu__toggle">
-              <span>Push Notification</span>
-              <ToggleSwitch :model-value="detail?.settings.pushNotification ?? false" @update:model-value="setSetting('pushNotification', $event)" />
+            <div class="td-settings-menu__section">
+              <div class="td-settings-menu__toggle">
+                <span>SMS Notification</span>
+                <ToggleSwitch :model-value="detail?.settings.smsNotification ?? false" @update:model-value="setSetting('smsNotification', $event)" />
+              </div>
+              <div class="td-settings-menu__toggle">
+                <span>Push Notification</span>
+                <ToggleSwitch :model-value="detail?.settings.pushNotification ?? false" @update:model-value="setSetting('pushNotification', $event)" />
+              </div>
+              <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
+                <span>Show On Base % as Average</span>
+                <ToggleSwitch :model-value="detail?.settings.showOnBaseAvg ?? false" @update:model-value="setSetting('showOnBaseAvg', $event)" />
+              </div>
+              <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
+                <span>Show average for top 5 players</span>
+                <ToggleSwitch :model-value="detail?.settings.showTop5Avg ?? false" @update:model-value="setSetting('showTop5Avg', $event)" />
+              </div>
             </div>
-            <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
-              <span>Show On Base % as Average</span>
-              <ToggleSwitch :model-value="detail?.settings.showOnBaseAvg ?? false" @update:model-value="setSetting('showOnBaseAvg', $event)" />
+            <div class="td-settings-menu__section td-settings-menu__section--danger">
+              <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="archiveCurrentTeam">
+                <AppIcon name="folder" :size="16" />
+                <span>Archive Team</span>
+              </button>
+              <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="reportCurrentTeam">
+                <AppIcon name="help" :size="16" />
+                <span>Report Team</span>
+              </button>
+              <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="exitCurrentTeam">
+                <AppIcon name="close" :size="16" />
+                <span>Exit Team</span>
+              </button>
             </div>
-            <div v-if="detail?.isAdmin" class="td-settings-menu__toggle">
-              <span>Show average for top 5 players</span>
-              <ToggleSwitch :model-value="detail?.settings.showTop5Avg ?? false" @update:model-value="setSetting('showTop5Avg', $event)" />
-            </div>
-            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="archiveCurrentTeam">Archive Team</button>
-            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="reportCurrentTeam">Report Team</button>
-            <button type="button" class="td-settings-menu__item td-settings-menu__item--danger" @click="exitCurrentTeam">Exit Team</button>
             <p v-if="detail?.createdByName" class="td-settings-menu__created">
               Created by {{ detail.createdByName }}
             </p>
@@ -656,7 +719,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           <div class="td-members-actions">
             <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
             <button type="button" class="td-toolbar-btn" @click="printTeamInfo">Print Team Info</button>
-            <button type="button" class="td-toolbar-btn" @click="inviteOpen = true">Invite To Team</button>
           </div>
         </div>
         <div v-if="members.length" class="td-filter">
@@ -850,26 +912,119 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       @saved="onTeamEdited"
     />
 
-    <SlideModal
-      v-model="messageOpen"
-      :title="messageTarget ? `Message ${messageTarget.title}` : 'Send Message'"
-      subtitle="Send a quick message without leaving this page."
-    >
-      <div class="td-message-box">
-        <textarea
-          v-model="messageDraft"
-          rows="5"
-          placeholder="Type your message"
-          :disabled="messageSending"
-        ></textarea>
-      </div>
-      <template #footer>
-        <button type="button" class="secondary-button" :disabled="messageSending" @click="openTargetChat">Open chat</button>
-        <button type="button" class="primary-button" :disabled="messageSending || !messageDraft.trim()" @click="sendQuickMessage">
-          {{ messageSending ? 'Sending...' : 'Send message' }}
+    <section v-if="messageOpen" class="td-chat-widget" aria-label="Quick chat" @click.stop>
+      <header class="td-chat-widget__header">
+        <TeamAvatar
+          :name="messageTarget?.title || 'Chat'"
+          :image-url="messageTarget?.avatarUrl ?? undefined"
+          size="sm"
+        />
+        <span class="td-chat-widget__title">
+          <b>{{ messageTarget?.title || 'Chat' }}</b>
+          <small>{{ widgetSubtitle }}</small>
+        </span>
+        <button
+          type="button"
+          class="td-chat-widget__icon"
+          title="Open full chat"
+          aria-label="Open full chat"
+          :disabled="!messageConversationId"
+          @click="openTargetChat"
+        >
+          <AppIcon name="message" :size="16" />
         </button>
-      </template>
-    </SlideModal>
+        <button
+          type="button"
+          class="td-chat-widget__icon"
+          title="Close"
+          aria-label="Close quick chat"
+          @click="closeMessageWidget"
+        >
+          <AppIcon name="close" :size="16" />
+        </button>
+      </header>
+
+      <div ref="messageBody" class="td-chat-widget__body">
+        <p v-if="messageLoading" class="td-chat-widget__state">Loading chat...</p>
+        <p v-else-if="messageError" class="td-chat-widget__state td-chat-widget__state--error">
+          {{ messageError }}
+        </p>
+        <p v-else-if="!widgetMessages.length" class="td-chat-widget__state">
+          No messages yet.
+        </p>
+        <template v-else>
+          <article
+            v-for="message in widgetMessages"
+            :key="message.id"
+            class="td-chat-message"
+            :class="{ 'td-chat-message--own': isOwnMessage(message), 'td-chat-message--deleted': message.isDeleted }"
+          >
+            <span v-if="widgetIsTeam && !isOwnMessage(message)" class="td-chat-message__sender">
+              {{ message.senderName }}
+            </span>
+            <p v-if="message.isDeleted" class="td-chat-message__deleted">This message was deleted</p>
+            <template v-else>
+              <div v-if="message.files.length" class="td-chat-message__files">
+                <template v-for="(file, idx) in message.files" :key="`${message.id}-${idx}`">
+                  <a
+                    v-if="isImageFile(file.type, file.name) && (file.thumbnailUrl || file.url)"
+                    class="td-chat-message__image"
+                    :href="file.url"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <img :src="file.thumbnailUrl || file.url" :alt="file.name" />
+                  </a>
+                  <video
+                    v-else-if="isVideoFile(file.type, file.name) && file.url"
+                    class="td-chat-message__video"
+                    :src="file.url"
+                    :poster="file.thumbnailUrl || undefined"
+                    controls
+                    playsinline
+                    preload="metadata"
+                  />
+                  <audio
+                    v-else-if="isAudioFile(file.type, file.name) && file.url"
+                    class="td-chat-message__audio"
+                    :src="file.url"
+                    controls
+                    preload="metadata"
+                  />
+                  <a
+                    v-else
+                    class="td-chat-message__file"
+                    :href="file.url"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    <AppIcon name="document" :size="16" />
+                    <span>
+                      <b>{{ file.name || 'Attachment' }}</b>
+                      <small v-if="file.size">{{ formatFileSize(file.size) }}</small>
+                    </span>
+                  </a>
+                </template>
+              </div>
+              <p v-if="message.content" class="td-chat-message__text">{{ message.content }}</p>
+            </template>
+            <span class="td-chat-message__meta">
+              {{ formatTime(message.createdAt) }}
+              <span v-if="messageStatusLabel(message)" class="td-chat-message__status">
+                {{ messageStatusLabel(message) }}
+              </span>
+            </span>
+          </article>
+        </template>
+      </div>
+
+      <MessageComposer
+        v-if="messageConversationId"
+        :conversation-id="messageConversationId"
+        :recipient-name="messageTarget?.title"
+        @sent="onWidgetSent"
+      />
+    </section>
   </main>
 </template>
 
@@ -982,21 +1137,38 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 30;
-  width: min(320px, 92vw);
+  z-index: 80;
+  width: min(340px, 92vw);
+  max-height: min(520px, calc(100vh - 120px));
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border: 1px solid var(--border-divider);
   border-radius: var(--radius-md, 8px);
   background: var(--surface-card);
-  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.24);
+}
+.td-settings-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-divider);
+}
+.td-settings-menu__section:last-of-type {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.td-settings-menu__section--danger {
+  gap: 0;
 }
 .td-settings-menu__item {
   min-height: 34px;
   display: flex;
   align-items: center;
+  gap: 9px;
   width: 100%;
   padding: 0 10px;
   border: none;
@@ -1007,6 +1179,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   font-size: 0.84rem;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
 }
 .td-settings-menu__item:hover {
   background: var(--surface-pill);
@@ -1020,15 +1193,20 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border-divider);
+  min-height: 38px;
+  padding: 6px 10px;
   color: var(--text);
   font-size: 0.82rem;
 }
+.td-settings-menu__toggle span {
+  min-width: 0;
+  line-height: 1.25;
+}
 .td-settings-menu__created {
-  margin: 4px 10px 0;
+  margin: 0 8px 2px;
   color: var(--text-light);
   font-size: 0.72rem;
+  line-height: 1.35;
 }
 .td-filter__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .td-filter__label { color: var(--secondary); font-size: 0.78rem; margin-right: 2px; }
@@ -1127,11 +1305,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
   gap: 8px;
 }
 .td-toolbar-btn {
   min-height: 34px;
+  white-space: nowrap;
   padding: 0 11px;
   border: 1px solid var(--border-divider);
   border-radius: var(--radius-md, 6px);
@@ -1186,21 +1367,202 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .td-menu button.is-danger:hover:not(:disabled) { background: rgba(193, 65, 58, 0.1); color: #c1413a; }
 .td-menu button:disabled { color: var(--text-light); cursor: default; }
 
-.td-message-box textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 140px;
-  padding: 12px;
+.td-chat-widget {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 95;
+  width: min(390px, calc(100vw - 32px));
+  height: min(620px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border-divider);
   border-radius: var(--radius-md, 8px);
   background: var(--surface-card);
-  color: var(--text);
-  font: inherit;
-  outline: none;
+  box-shadow: 0 22px 58px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
 }
-.td-message-box textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-light-3);
+.td-chat-widget__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-divider);
+  background: var(--surface-card);
+}
+.td-chat-widget__title {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.td-chat-widget__title b {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-chat-widget__title small {
+  color: var(--secondary);
+  font-size: 0.74rem;
+}
+.td-chat-widget__icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+  color: var(--secondary);
+  cursor: pointer;
+}
+.td-chat-widget__icon:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: var(--border-accent-hover, var(--primary-light-2));
+  background: var(--surface-pill);
+}
+.td-chat-widget__icon:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.td-chat-widget__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  background: var(--surface-main, var(--surface-card));
+}
+.td-chat-widget__state {
+  margin: auto;
+  color: var(--secondary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.td-chat-widget__state--error {
+  color: #c1413a;
+}
+.td-chat-message {
+  align-self: flex-start;
+  max-width: min(82%, 280px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border-divider);
+  border-radius: 12px 12px 12px 4px;
+  background: var(--surface-card);
+  color: var(--text);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+}
+.td-chat-message--own {
+  align-self: flex-end;
+  border-color: var(--primary-light-2);
+  border-radius: 12px 12px 4px 12px;
+  background: var(--primary-light-3);
+}
+.td-chat-message__sender {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.td-chat-message__text,
+.td-chat-message__deleted {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
+  line-height: 1.38;
+}
+.td-chat-message__deleted {
+  color: var(--text-light);
+  font-style: italic;
+}
+.td-chat-message__files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.td-chat-message__image,
+.td-chat-message__video {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface-pill);
+}
+.td-chat-message__image img,
+.td-chat-message__video {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  object-fit: cover;
+}
+.td-chat-message__audio {
+  width: 240px;
+  max-width: 100%;
+}
+.td-chat-message__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 9px;
+  background: var(--surface-pill);
+  color: var(--text);
+  text-decoration: none;
+}
+.td-chat-message__file span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.td-chat-message__file b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.td-chat-message__file small {
+  color: var(--text-light);
+  font-size: 0.7rem;
+}
+.td-chat-message__meta {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-light);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+.td-chat-message__status {
+  color: var(--primary);
+  font-weight: 700;
+}
+.td-chat-widget :deep(.composer) {
+  padding: 8px;
+  background: var(--surface-card);
+}
+.td-chat-widget :deep(.composer__bar) {
+  gap: 7px;
+}
+.td-chat-widget :deep(.composer__input) {
+  min-height: 38px;
+  font-size: 0.84rem;
+}
+.td-chat-widget :deep(.composer__attach),
+.td-chat-widget :deep(.composer__send) {
+  width: 36px;
+  height: 36px;
 }
 
 /* Player stats table */
