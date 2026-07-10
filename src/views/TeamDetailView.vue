@@ -106,8 +106,18 @@ const events = ref<TeamEventItem[]>([])
 const members = ref<TeamMemberItem[]>([])
 const players = ref<TeamPlayerStat[]>([])
 const teamGameStats = ref<TeamGameStats>({ games: [], total: null })
-const loaded = ref<Record<TabKey, boolean>>({ events: false, teammates: false, 'player-stats': false, 'team-stats': false })
 const loadingTab = ref(false)
+// Monotonic token so out-of-order tab responses (from rapid switching) are
+// ignored — the latest switch always wins. See loadTab().
+let tabReqId = 0
+
+// Count badges on each tab (matchgeni pattern). Shown only when > 0.
+const tabCounts = computed<Record<TabKey, number>>(() => ({
+  events: events.value.length,
+  teammates: members.value.length,
+  'player-stats': players.value.length,
+  'team-stats': teamGameStats.value.games.length
+}))
 
 // Team Statistics table columns (per-game) + click-to-sort.
 const STAT_COLS: { key: string; label: string }[] = [
@@ -215,32 +225,48 @@ function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   return 'neutral'
 }
 
-async function ensureEventsLoaded() {
-  if (loaded.value.events) return
-  events.value = await fetchTeamEvents(teamId.value)
-  loaded.value.events = true
-}
-
-async function loadTab(tab: TabKey, force = false) {
-  if (loaded.value[tab] && !force) return
+// Always refetch on tab activation — the user wants fresh data on every switch,
+// never a stale cached view. A per-call token guards against out-of-order
+// responses when switching quickly (only the newest call commits + clears the
+// loader). Shimmer shows for the duration of each fetch.
+async function loadTab(tab: TabKey) {
+  const reqId = ++tabReqId
   loadingTab.value = true
   try {
-    if (tab === 'events') events.value = await fetchTeamEvents(teamId.value)
-    else if (tab === 'teammates') members.value = await fetchTeamMembers(teamId.value)
-    else if (tab === 'player-stats') {
-      await ensureEventsLoaded()
-      players.value = await fetchTeamPlayerStats(teamId.value, statFilterPayload.value)
+    if (tab === 'events') {
+      const data = await fetchTeamEvents(teamId.value)
+      if (reqId !== tabReqId) return
+      events.value = data
+    } else if (tab === 'teammates') {
+      const data = await fetchTeamMembers(teamId.value)
+      if (reqId !== tabReqId) return
+      members.value = data
+    } else if (tab === 'player-stats') {
+      // Events power the stat filter dropdowns; fetch both fresh.
+      const [evs, ps] = await Promise.all([
+        fetchTeamEvents(teamId.value),
+        fetchTeamPlayerStats(teamId.value, statFilterPayload.value)
+      ])
+      if (reqId !== tabReqId) return
+      events.value = evs
+      players.value = ps
     } else if (tab === 'team-stats') {
-      await ensureEventsLoaded()
-      teamGameStats.value = await fetchTeamGameStats(teamId.value, statFilterPayload.value)
+      const [evs, gs] = await Promise.all([
+        fetchTeamEvents(teamId.value),
+        fetchTeamGameStats(teamId.value, statFilterPayload.value)
+      ])
+      if (reqId !== tabReqId) return
+      events.value = evs
+      teamGameStats.value = gs
     }
-    loaded.value[tab] = true
   } finally {
-    loadingTab.value = false
+    // Only the latest request clears the loader.
+    if (reqId === tabReqId) loadingTab.value = false
   }
 }
 
 function setTab(tab: TabKey) {
+  if (tab === activeTab.value) return
   activeTab.value = tab
   void loadTab(tab)
 }
@@ -256,14 +282,11 @@ async function refreshHeader() {
 
 async function onTeamEdited() {
   await refreshHeader()
-  if (loaded.value.teammates) {
-    members.value = await fetchTeamMembers(teamId.value)
-  }
+  members.value = await fetchTeamMembers(teamId.value)
 }
 
 async function onInviteSent() {
-  loaded.value.teammates = false
-  await loadTab('teammates', true)
+  members.value = await fetchTeamMembers(teamId.value)
   await refreshHeader()
 }
 
@@ -284,7 +307,6 @@ async function printTeamInfo() {
   const roster = members.value.length ? members.value : await fetchTeamMembers(teamId.value)
   if (!members.value.length) {
     members.value = roster
-    loaded.value.teammates = true
   }
   const popup = window.open('', '_blank', 'width=860,height=700')
   if (!popup) {
@@ -493,12 +515,11 @@ function openTargetChat() {
   if (messageConversationId.value) goToChat(messageConversationId.value)
 }
 
-watch(activeTab, (t) => { void loadTab(t) })
-
+// Stat filter changes re-fetch the active stats tab. (Tab switches load via
+// setTab / onMounted, so no activeTab watcher is needed — that would double-fire.)
 watch([statEvent, statType, statAssoc], () => {
   if (activeTab.value !== 'player-stats' && activeTab.value !== 'team-stats') return
-  loaded.value[activeTab.value] = false
-  void loadTab(activeTab.value, true)
+  void loadTab(activeTab.value)
 })
 
 watch(
@@ -576,9 +597,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <div class="td-settings-menu__section">
               <button v-if="detail?.isAdmin" type="button" class="td-settings-menu__item" @click="editOpen = true; settingsOpen = false">
                 <AppIcon name="text" :size="16" />
-                <span>Edit Team Details / Logo</span>
+                <span>Edit Team Details</span>
               </button>
-              <button type="button" class="td-settings-menu__item" @click="inviteOpen = true; settingsOpen = false">
+              <button type="button" class= "td-settings-menu__item" @click="inviteOpen = true; settingsOpen = false">
                 <AppIcon name="people" :size="16" />
                 <span>Invite To Team</span>
               </button>
@@ -648,17 +669,27 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         role="tab"
         :aria-selected="activeTab === t.key"
         @click="setTab(t.key)"
-      >{{ t.label }}</button>
+      >{{ t.label }}<span v-if="tabCounts[t.key]" class="team-detail__tab-count">{{ tabCounts[t.key] }}</span></button>
     </nav>
 
     <section class="team-detail__panel">
-      <div v-if="loadingTab" class="td-sk-list" aria-busy="true">
-        <div v-for="n in 5" :key="`tsk-${n}`" class="td-sk-row">
-          <span class="shimmer-circle td-sk-row__avatar"></span>
-          <span class="td-sk-row__lines">
-            <span class="shimmer-block td-sk-row__l1"></span>
-            <span class="shimmer-block td-sk-row__l2"></span>
-          </span>
+      <!-- Per-tab shimmer: shows on EVERY switch while fresh data loads (no
+           stale content), shaped to match the tab's real layout. -->
+      <div v-if="loadingTab" class="td-sk" aria-busy="true">
+        <div v-if="activeTab === 'events' || activeTab === 'teammates'" class="td-sk-list">
+          <div v-for="n in 6" :key="`tsk-${n}`" class="td-sk-row">
+            <span class="shimmer-circle td-sk-row__avatar"></span>
+            <span class="td-sk-row__lines">
+              <span class="shimmer-block td-sk-row__l1"></span>
+              <span class="shimmer-block td-sk-row__l2"></span>
+            </span>
+          </div>
+        </div>
+        <div v-else class="td-sk-table">
+          <div v-for="n in 8" :key="`tskt-${n}`" class="td-sk-trow">
+            <span class="shimmer-circle td-sk-trow__lead"></span>
+            <span v-for="c in 6" :key="`tskc-${n}-${c}`" class="shimmer-block td-sk-trow__cell"></span>
+          </div>
         </div>
       </div>
 
@@ -1082,32 +1113,68 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 .team-detail__record-item b { color: var(--text); font-size: 1.15rem; font-weight: 600; }
 
-/* Tabs */
+/* Tabs — canonical matchgeni pill treatment (solid primary fill when active,
+   optional count badge). */
 .team-detail__tabs {
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 14px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--border-divider);
 }
 .team-detail__tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 10px 14px;
-  color: var(--secondary);
+  min-height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--border-divider);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--text);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.team-detail__tab:hover { color: var(--primary); }
-.team-detail__tab--active { color: var(--primary); border-bottom-color: var(--primary); }
-
+.team-detail__tab:hover:not(.team-detail__tab--active) {
+  background: rgba(45, 140, 240, 0.06);
+}
+.team-detail__tab--active {
+  background: var(--primary, #2d8cf0);
+  border-color: var(--primary, #2d8cf0);
+  color: #fff;
+}
+.team-detail__tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(36, 60, 91, 0.08);
+  color: var(--secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.team-detail__tab--active .team-detail__tab-count {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+/* Dark mode — active tab as outline (matches matchgeni). */
+:global(html.dark-mode) .team-detail__tab--active,
+:global(html.dark-mode) .team-detail__tab--active:hover {
+  background: var(--surface-card);
+  border-color: var(--primary);
+  color: var(--primary);
+}
 /* Panel */
 .team-detail__panel { min-height: 120px; }
 .team-detail__empty { color: var(--secondary); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
@@ -1326,6 +1393,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .td-sk-row__lines { display: flex; flex-direction: column; gap: 7px; flex: 1 1 auto; }
 .td-sk-row__l1 { display: block; height: 13px; width: 45%; border-radius: 6px; }
 .td-sk-row__l2 { display: block; height: 11px; width: 65%; border-radius: 6px; }
+/* Table-shaped skeleton for the Player / Team statistics tabs. */
+.td-sk-table { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.td-sk-trow { display: flex; align-items: center; gap: 12px; }
+.td-sk-trow__lead { width: 32px; height: 32px; border-radius: 999px; flex: 0 0 auto; }
+.td-sk-trow__cell { flex: 1 1 0; height: 14px; border-radius: 6px; }
+.td-sk-trow__cell:first-of-type { flex: 2 1 0; }
 
 /* Events */
 .team-detail__events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }

@@ -96,7 +96,20 @@ async function onTeamCreated(conversation: ChatConversation | null) {
     />
   </div>
 
-  <div v-else class="chat-view" :class="{ 'chat-view--thread': activeId, 'chat-view--info': showInfo }">
+  <!--
+    chat-view--info only reserves the third (info) column when the panel
+    actually renders (activeId + showInfo + unlocked) — otherwise an empty
+    320px column shows the dark body-bg (the "black space" bug). Mirrors the
+    v-if gate on .chat-view__info below.
+  -->
+  <div
+    v-else
+    class="chat-view"
+    :class="{
+      'chat-view--thread': activeId,
+      'chat-view--info': showInfo && !!activeId && !activeConvLocked
+    }"
+  >
     <div class="chat-view__list">
       <ConversationList @add-team="addTeam" @start-chat="startChat" />
     </div>
@@ -145,7 +158,9 @@ async function onTeamCreated(conversation: ChatConversation | null) {
   height: calc(100dvh - 56px);
   min-height: 0;
   overflow: hidden;
-  background: var(--body-bg, #f5f7fb);
+  /* Card surface (not the near-black --body-bg) so column gaps / the empty
+     thread never bleed the dark page background. */
+  background: var(--surface-card, #fff);
 }
 
 .chat-view--info {
