@@ -349,9 +349,15 @@ export const useChatStore = defineStore('chat', {
       })
 
       s.on('message.sent', (payload: MessageSentPayload) => {
-        console.info('[chat] recv message.sent', payload?.message?.id, 'conv:', payload?.message?.conversationId ?? payload?.message?.conversation_id)
-        if (!payload?.message) return
-        void this.onIncomingMessage(adaptMessage(payload.message))
+        // The gateway relays Laravel's `data: { message: {…} }`, so the event
+        // arrives double-nested as `{ message: { message: {…} } }`. Unwrap the
+        // extra layer when present (a correctly-shaped payload has no `.message`
+        // on the message, so this is safe either way).
+        const raw = ((payload?.message as { message?: ApiMessage } | undefined)?.message
+          ?? payload?.message) as ApiMessage | undefined
+        console.info('[chat] recv message.sent', raw?.id, 'conv:', raw?.conversationId ?? raw?.conversation_id)
+        if (!raw) return
+        void this.onIncomingMessage(adaptMessage(raw))
       })
 
       // Sender's own confirmation (carries the persisted message + clientId).
@@ -360,8 +366,10 @@ export const useChatStore = defineStore('chat', {
         (payload: { success?: boolean; data?: ApiMessage | { messages?: ApiMessage[] } }) => {
           const data = payload?.data
           if (!data) return
-          const maybe = data as { messages?: ApiMessage[] }
-          const rows = Array.isArray(maybe.messages) ? maybe.messages : [data as ApiMessage]
+          const maybe = data as { messages?: ApiMessage[]; message?: ApiMessage }
+          const rows = Array.isArray(maybe.messages)
+            ? maybe.messages
+            : [maybe.message ?? (data as ApiMessage)]
           for (const row of rows) {
             if (row && (row.id || row.clientId || row.client_id)) {
               void this.onIncomingMessage(adaptMessage(row))
