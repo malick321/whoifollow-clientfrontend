@@ -334,8 +334,17 @@ export const useChatStore = defineStore('chat', {
         s.emit('get-online-users')
       })
 
-      s.on('disconnect', () => {
+      s.on('disconnect', (reason) => {
         this.connected = false
+        console.warn('[chat] socket disconnected:', reason)
+      })
+
+      // Surface WHY the realtime socket won't connect (CORS, bad URL, auth,
+      // server down) — otherwise sends silently fall back to REST and messages
+      // only appear after a refresh, with no clue as to the cause.
+      s.on('connect_error', (err: Error) => {
+        this.connected = false
+        console.warn('[chat] socket connect_error →', resolveSocketUrl(), '::', err?.message)
       })
 
       s.on('message.sent', (payload: MessageSentPayload) => {
