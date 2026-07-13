@@ -81,7 +81,7 @@ export async function cacheConversations(conversations: ChatConversation[]): Pro
     if (!db) return
     const tx = db.transaction(CONVERSATIONS_STORE, 'readwrite')
     for (const conv of conversations) {
-      await tx.store.put(conv)
+      await tx.store.put(plain(conv))
     }
     await tx.done
   } catch (err) {
@@ -115,7 +115,7 @@ export async function cacheMessages(_convId: string, msgs: ChatMessage[]): Promi
     if (!db) return
     const tx = db.transaction(MESSAGES_STORE, 'readwrite')
     for (const msg of msgs) {
-      await tx.store.put(msg)
+      await tx.store.put(plain(msg))
     }
     await tx.done
   } catch (err) {
@@ -142,11 +142,18 @@ export async function getCachedMessages(convId: string, limit?: number): Promise
   }
 }
 
+/** IndexedDB's structured clone cannot clone Vue reactive proxies (arrays/
+ *  objects on a reactive message throw DataCloneError). Every write goes
+ *  through this to produce a plain, cloneable snapshot. */
+function plain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 export async function upsertMessage(msg: ChatMessage): Promise<void> {
   try {
     const db = await getDb()
     if (!db) return
-    await db.put(MESSAGES_STORE, msg)
+    await db.put(MESSAGES_STORE, plain(msg))
   } catch (err) {
     console.warn('[chat-db] upsertMessage failed', err)
   }
@@ -175,7 +182,7 @@ export async function setMessageStatus(
     existing.status = status
     if (patch?.deliveredTo) existing.deliveredTo = patch.deliveredTo
     if (patch?.readBy) existing.readBy = patch.readBy
-    await db.put(MESSAGES_STORE, existing)
+    await db.put(MESSAGES_STORE, plain(existing))
   } catch (err) {
     console.warn('[chat-db] setMessageStatus failed', err)
   }
