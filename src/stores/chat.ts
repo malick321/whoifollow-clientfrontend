@@ -327,6 +327,7 @@ export const useChatStore = defineStore('chat', {
     registerSocketHandlers(s: Socket) {
       s.on('connect', () => {
         this.connected = true
+        console.info('[chat] socket CONNECTED', s.id, '· active:', this.activeConversationId)
         // Re-join the active conversation's room after a (re)connect.
         if (this.activeConversationId) {
           s.emit('join-conversation', roomFor(this.activeConversationId))
@@ -348,6 +349,7 @@ export const useChatStore = defineStore('chat', {
       })
 
       s.on('message.sent', (payload: MessageSentPayload) => {
+        console.info('[chat] recv message.sent', payload?.message?.id, 'conv:', payload?.message?.conversationId ?? payload?.message?.conversation_id)
         if (!payload?.message) return
         void this.onIncomingMessage(adaptMessage(payload.message))
       })
@@ -499,7 +501,10 @@ export const useChatStore = defineStore('chat', {
 
       try {
         if (socket && socket.connected) {
+          console.info('[chat] join room conversation.' + id)
           socket.emit('join-conversation', roomFor(id))
+        } else {
+          console.warn('[chat] open conversation but socket NOT connected — will not receive realtime for', id)
         }
 
         // Cache-first: render cached tail instantly (minus hidden ids).
@@ -612,8 +617,10 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (socket && socket.connected) {
+        console.info('[chat] send via SOCKET → room conversation.' + id)
         socket.emit('send-message', payload)
       } else {
+        console.warn('[chat] send via REST (socket not connected) → no realtime push')
         // REST fallback when the socket is down.
         void sendMessageRest(id, { content, parentMessageId: parent?.id, clientId })
           .then((msgs) => {
