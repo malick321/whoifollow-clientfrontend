@@ -37,10 +37,94 @@ type PlacePhotoLike = {
 }
 
 const BIAS_RADIUS_M = 50_000
+const FALLBACK_CITY_PREFIX = 'wif-city:'
 
 export const NEARBY_MATCH_RADIUS_M = 500
 
 let sessionToken: google.maps.places.AutocompleteSessionToken | null = null
+
+const FALLBACK_CITY_STATES: Array<[string, string]> = [
+  ['Albany', 'NY'],
+  ['Albuquerque', 'NM'],
+  ['Anchorage', 'AK'],
+  ['Annapolis', 'MD'],
+  ['Arlington', 'TX'],
+  ['Atlanta', 'GA'],
+  ['Austin', 'TX'],
+  ['Baltimore', 'MD'],
+  ['Baton Rouge', 'LA'],
+  ['Birmingham', 'AL'],
+  ['Boise', 'ID'],
+  ['Boston', 'MA'],
+  ['Buffalo', 'NY'],
+  ['Charlotte', 'NC'],
+  ['Chicago', 'IL'],
+  ['Cincinnati', 'OH'],
+  ['Cleveland', 'OH'],
+  ['Colorado Springs', 'CO'],
+  ['Columbus', 'OH'],
+  ['Dallas', 'TX'],
+  ['Denver', 'CO'],
+  ['Des Moines', 'IA'],
+  ['Detroit', 'MI'],
+  ['East Lansing', 'MI'],
+  ['East Rutherford', 'NJ'],
+  ['El Paso', 'TX'],
+  ['Fort Lauderdale', 'FL'],
+  ['Fort Worth', 'TX'],
+  ['Fresno', 'CA'],
+  ['Grand Rapids', 'MI'],
+  ['Hartford', 'CT'],
+  ['Houston', 'TX'],
+  ['Indianapolis', 'IN'],
+  ['Jacksonville', 'FL'],
+  ['Jersey City', 'NJ'],
+  ['Kansas City', 'MO'],
+  ['Las Vegas', 'NV'],
+  ['Long Beach', 'CA'],
+  ['Los Angeles', 'CA'],
+  ['Louisville', 'KY'],
+  ['Memphis', 'TN'],
+  ['Mesa', 'AZ'],
+  ['Miami', 'FL'],
+  ['Milwaukee', 'WI'],
+  ['Minneapolis', 'MN'],
+  ['Nashville', 'TN'],
+  ['New Haven', 'CT'],
+  ['New Orleans', 'LA'],
+  ['New York', 'NY'],
+  ['Newark', 'NJ'],
+  ['Oakland', 'CA'],
+  ['Oklahoma City', 'OK'],
+  ['Omaha', 'NE'],
+  ['Orlando', 'FL'],
+  ['Philadelphia', 'PA'],
+  ['Phoenix', 'AZ'],
+  ['Pittsburgh', 'PA'],
+  ['Portland', 'OR'],
+  ['Providence', 'RI'],
+  ['Raleigh', 'NC'],
+  ['Richmond', 'VA'],
+  ['Rochester', 'NY'],
+  ['Sacramento', 'CA'],
+  ['Saint Louis', 'MO'],
+  ['Saint Paul', 'MN'],
+  ['Salt Lake City', 'UT'],
+  ['San Antonio', 'TX'],
+  ['San Diego', 'CA'],
+  ['San Francisco', 'CA'],
+  ['San Jose', 'CA'],
+  ['Seattle', 'WA'],
+  ['Tampa', 'FL'],
+  ['Trenton', 'NJ'],
+  ['Tucson', 'AZ'],
+  ['Tulsa', 'OK'],
+  ['Virginia Beach', 'VA'],
+  ['Washington', 'DC'],
+  ['Wichita', 'KS'],
+  ['Wilmington', 'DE'],
+  ['Yonkers', 'NY']
+]
 
 function ensureSessionToken(
   google: typeof globalThis.google
@@ -74,6 +158,59 @@ function mapLegacyPrediction(p: google.maps.places.AutocompletePrediction): Plac
     description: p.description,
     isEstablishment: (p.types ?? []).includes('establishment')
   }
+}
+
+function normalizeSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function fallbackCityPlaceId(city: string, state: string): string {
+  return `${FALLBACK_CITY_PREFIX}${encodeURIComponent(city)}|${state}`
+}
+
+function fallbackCityFromPlaceId(placeId: string): { city: string; state: string } | null {
+  if (!placeId.startsWith(FALLBACK_CITY_PREFIX)) return null
+  const raw = placeId.slice(FALLBACK_CITY_PREFIX.length)
+  const [cityRaw, stateRaw] = raw.split('|')
+  const city = decodeURIComponent(cityRaw ?? '').trim()
+  const state = (stateRaw ?? '').trim().toUpperCase()
+  return city && state ? { city, state } : null
+}
+
+function fallbackCityPredictions(query: string): PlacePrediction[] {
+  const q = normalizeSearch(query)
+  if (q.length < 2) return []
+  const parsed = parseCityStateText(query)
+  const typedCity = parsed ? normalizeSearch(parsed.city) : ''
+  const typedState = parsed?.state.toUpperCase() ?? ''
+
+  return FALLBACK_CITY_STATES
+    .map(([city, state]) => {
+      const cityNorm = normalizeSearch(city)
+      const fullNorm = normalizeSearch(`${city} ${state}`)
+      let score = 0
+      if (typedCity && typedState && cityNorm === typedCity && state === typedState) score = 100
+      else if (cityNorm === q) score = 90
+      else if (fullNorm === q) score = 85
+      else if (cityNorm.startsWith(q)) score = 70
+      else if (fullNorm.startsWith(q)) score = 65
+      else if (cityNorm.includes(q)) score = 40
+      else if (fullNorm.includes(q)) score = 30
+      return { city, state, score }
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.city.localeCompare(b.city))
+    .slice(0, 8)
+    .map(({ city, state }) => ({
+      placeId: fallbackCityPlaceId(city, state),
+      primaryText: `${city}, ${state}`,
+      secondaryText: 'United States',
+      description: `${city}, ${state}, United States`,
+      isEstablishment: false
+    }))
 }
 
 async function searchCurrentPlacePredictions(
@@ -140,16 +277,20 @@ export async function searchPlacePredictions(
   const q = query.trim()
   if (q.length < 2) return []
   const google = await loadGoogleMaps()
-  if (!google) return []
+  if (!google) return fallbackCityPredictions(q)
 
   try {
     const rows = await searchCurrentPlacePredictions(google, q, opts)
     if (rows.length) return rows
-  } catch {
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('[placesLookup] current autocomplete failed; using fallback.', err)
+    }
     // Fall through to the legacy Maps JS Places API below.
   }
 
-  return searchLegacyPlacePredictions(google, q, opts)
+  const legacyRows = await searchLegacyPlacePredictions(google, q, opts)
+  return legacyRows.length ? legacyRows : fallbackCityPredictions(q)
 }
 
 /** Establishments within `radiusM` of a point. */
@@ -268,6 +409,17 @@ export function parseCityStateText(value: string): { city: string; state: string
     }
   }
 
+  const normalized = normalizeSearch(value)
+  const exactFallbacks = FALLBACK_CITY_STATES.filter(([city, state]) => {
+    const cityNorm = normalizeSearch(city)
+    const fullNorm = normalizeSearch(`${city} ${state}`)
+    return cityNorm === normalized || fullNorm === normalized
+  })
+  if (exactFallbacks.length === 1) {
+    const [city, state] = exactFallbacks[0]
+    return { city, state }
+  }
+
   const compact = value
     .trim()
     .match(/([A-Za-z][A-Za-z .'-]+?)\s+([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/)
@@ -288,6 +440,20 @@ function splitPhone(
 
 /** Resolve a place by id into a PlaceLookup. */
 export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | null> {
+  const fallback = fallbackCityFromPlaceId(placeId)
+  if (fallback) {
+    const formattedAddress = `${fallback.city}, ${fallback.state}, United States`
+    return {
+      placeId,
+      name: `${fallback.city}, ${fallback.state}`,
+      formattedAddress,
+      city: fallback.city,
+      state: fallback.state,
+      position: { lat: 0, lng: 0 },
+      photos: []
+    }
+  }
+
   const google = await loadGoogleMaps()
   if (!google) return null
 
