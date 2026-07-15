@@ -4,7 +4,7 @@ import SlideModal from '../SlideModal.vue'
 import TeamAvatar from '../TeamAvatar.vue'
 import ImageEditorModal from '../ImageEditorModal.vue'
 import { fetchAgeGroups } from '../../api/ageRatingCatalogue'
-import { fetchPlaceById, searchPlacePredictions } from '../../api/placesLookup'
+import { fetchPlaceById, parseCityStateText, searchPlacePredictions } from '../../api/placesLookup'
 import { fetchSportTypes } from '../../api/sportTypes'
 import googleG from '../../assets/google-g.svg'
 import {
@@ -145,11 +145,21 @@ async function pickPlace(p: PlacePrediction) {
     : (place.city || p.primaryText)
 }
 
+function applyTypedCityState() {
+  if (city.value.trim() && state.value.trim()) return
+  const parsed = parseCityStateText(cityStateQuery.value)
+  if (!parsed) return
+  city.value = parsed.city
+  state.value = parsed.state
+  cityStateQuery.value = `${parsed.city}, ${parsed.state}`
+}
+
 async function save() {
   showErrors.value = true
   if (!canSave.value || !props.teamId) return
   saving.value = true
   try {
+    applyTypedCityState()
     if (logoFile.value) await changeTeamLogo(props.teamId, logoFile.value)
     await editTeamDetails(props.teamId, {
       name: name.value.trim(),

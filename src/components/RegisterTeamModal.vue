@@ -29,7 +29,7 @@ import ToggleSwitch from './ToggleSwitch.vue'
 import TeamAvatar from './TeamAvatar.vue'
 import CustomFieldsRenderer from './CustomFieldsRenderer.vue'
 import DateTimePicker from './DateTimePicker.vue'
-import { fetchPlaceById, searchPlacePredictions } from '../api/placesLookup'
+import { fetchPlaceById, parseCityStateText, searchPlacePredictions } from '../api/placesLookup'
 import { fetchCustomFieldDefinitions } from '../api/customFields'
 import { fetchSportTypes } from '../api/sportTypes'
 import googleG from '../assets/google-g.svg'
@@ -406,6 +406,7 @@ function goBack() {
 }
 function goNext() {
   showErrors.value = true
+  if (step.value === 'details') applyTypedCityState()
   if (step.value === 'details' && detailsErrors.value.size) return
   if (step.value === 'registration' && paymentInvalid.value) return
   if (step.value === 'additional' && customFieldErrors.value.length) return
@@ -450,6 +451,15 @@ async function pickPlace(p: PlacePrediction) {
   city.value = place.city || ''
   state.value = place.state || ''
   cityStateQuery.value = city.value && state.value ? `${city.value}, ${state.value}` : (place.city || p.primaryText)
+}
+
+function applyTypedCityState() {
+  if (city.value.trim() && state.value.trim()) return
+  const parsed = parseCityStateText(cityStateQuery.value)
+  if (!parsed) return
+  city.value = parsed.city
+  state.value = parsed.state
+  cityStateQuery.value = `${parsed.city}, ${parsed.state}`
 }
 
 // ── Logo (cropper) ───────────────────────────────────────────────
@@ -594,6 +604,7 @@ const reviewActivation = computed(() => {
 // ── Save ─────────────────────────────────────────────────────────
 async function save() {
   showErrors.value = true
+  applyTypedCityState()
   if (!canSubmit.value) {
     // Jump back to the first step with an error so it's visible.
     if (detailsErrors.value.size) step.value = 'details'

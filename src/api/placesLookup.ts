@@ -1,36 +1,45 @@
 // placesLookup
 // ------------
-// LIVE Google Places search for the Map Explorer's in-map "Add Venue" flow
-// (find a brand-new park/hotel that isn't in our backend yet, then prefill
-// its details from Google). Distinct from `src/api/placeDetails.ts`, which
-// stays mock-first for enriching EXISTING pins so dev keeps working.
+// Live Google Places search used by map/search and team location fields.
 //
-// Uses the CURRENT Places API (the legacy `AutocompleteService` / `PlacesService`
-// are deprecated to new customers as of Mar 2025):
-//   - autocomplete  → `AutocompleteSuggestion.fetchAutocompleteSuggestions`
-//   - place details → `new Place({id}).fetchFields()`
-//   - nearby venues → `Place.searchNearby`
-// The `places` library is loaded by `loadGoogleMaps()`. With no Maps key
-// configured, `searchPlacePredictions` / `findNearbyVenues` resolve to `[]` and
-// `fetchPlaceById` to `null` — callers render graceful empty states.
+// We try the current Places API first:
+//   - AutocompleteSuggestion.fetchAutocompleteSuggestions
+//   - new Place({ id }).fetchFields()
+// Then we fall back to the legacy Maps JS Places APIs:
+//   - AutocompleteService.getPlacePredictions
+//   - PlacesService.getDetails
+//
+// That fallback matters for production because the old Who I Follow frontend
+// already uses the legacy stack, and some Google projects have Maps JS Places
+// enabled before Places API (New) is enabled. With no key configured, callers
+// still get [] / null and can render graceful empty states.
 
 import { loadGoogleMaps } from '../lib/googleMaps'
 import type { GeoPosition, PlaceLookup, PlacePrediction } from '../types'
 
-// Soft location-bias radius (metres) for autocomplete — keeps results
-// regional so a same-named venue in another city doesn't outrank the local
-// one. NOT a filter and NOT a dedup radius: it only re-ranks; every match
-// (incl. two parks <200m apart) still appears as a distinct prediction.
+type SearchOptions = {
+  biasCenter?: GeoPosition
+  /** Pass ['(cities)'] to prefer city/locality-level results. */
+  types?: string[]
+}
+
+type AddressComponentLike = {
+  types: string[]
+  longText?: string | null
+  shortText?: string | null
+  long_name?: string
+  short_name?: string
+}
+
+type PlacePhotoLike = {
+  getURI?: (options: { maxWidth?: number; maxHeight?: number }) => string
+  getUrl?: (options: { maxWidth?: number; maxHeight?: number }) => string
+}
+
 const BIAS_RADIUS_M = 50_000
 
-// Radius (metres) scanned around a picked ADDRESS to find the actual venue
-// (a softball/sports complex may be named anything, and its pin can sit at a
-// parking entrance) — kept generous so the facility is caught. Drives the
-// on-map match circle. Tunable.
 export const NEARBY_MATCH_RADIUS_M = 500
 
-// One session token spans a search→pick cycle (Google bills autocomplete +
-// details as one session). Reset after each successful detail fetch.
 let sessionToken: google.maps.places.AutocompleteSessionToken | null = null
 
 function ensureSessionToken(
@@ -40,35 +49,46 @@ function ensureSessionToken(
   return sessionToken
 }
 
-/** Live Places Autocomplete predictions for a free-text query. Broad
- *  (establishments AND addresses) so typing a name resolves the venue
- *  directly, while an address row routes through the nearby-venue lookup.
- *  Softly biased to `biasCenter` when supplied. Returns `[]` when the query
- *  is too short, no key is configured, or none match. */
-export async function searchPlacePredictions(
-  query: string,
-  opts?: {
-    biasCenter?: GeoPosition
-    /** Place-type filter mapped to the new API's `includedPrimaryTypes`.
-     *  Pass `['(cities)']` to restrict to city / locality level (no street
-     *  addresses). */
-    types?: string[]
-  }
-): Promise<PlacePrediction[]> {
-  const q = query.trim()
-  if (q.length < 2) return []
-  const google = await loadGoogleMaps()
-  if (!google) return []
+function photoUrl(photo: PlacePhotoLike): string | null {
+  if (typeof photo.getURI === 'function') return photo.getURI({ maxWidth: 480 })
+  if (typeof photo.getUrl === 'function') return photo.getUrl({ maxWidth: 480 })
+  return null
+}
 
-  const token = ensureSessionToken(google)
+function mapCurrentPrediction(p: google.maps.places.PlacePrediction): PlacePrediction {
+  return {
+    placeId: p.placeId,
+    primaryText: p.mainText?.text ?? p.text.text,
+    secondaryText: p.secondaryText?.text ?? '',
+    description: p.text.text,
+    isEstablishment: (p.types ?? []).includes('establishment')
+  }
+}
+
+function mapLegacyPrediction(p: google.maps.places.AutocompletePrediction): PlacePrediction | null {
+  if (!p.place_id) return null
+  return {
+    placeId: p.place_id,
+    primaryText: p.structured_formatting?.main_text ?? p.description,
+    secondaryText: p.structured_formatting?.secondary_text ?? '',
+    description: p.description,
+    isEstablishment: (p.types ?? []).includes('establishment')
+  }
+}
+
+async function searchCurrentPlacePredictions(
+  google: typeof globalThis.google,
+  query: string,
+  opts?: SearchOptions
+): Promise<PlacePrediction[]> {
+  const autocomplete = google.maps.places.AutocompleteSuggestion
+  if (!autocomplete?.fetchAutocompleteSuggestions) return []
 
   const request: google.maps.places.AutocompleteRequest = {
-    input: q,
-    sessionToken: token
+    input: query,
+    sessionToken: ensureSessionToken(google)
   }
-  if (opts?.types && opts.types.length) {
-    request.includedPrimaryTypes = opts.types
-  }
+  if (opts?.types?.length) request.includedPrimaryTypes = opts.types
   if (opts?.biasCenter) {
     request.locationBias = {
       center: { lat: opts.biasCenter.lat, lng: opts.biasCenter.lng },
@@ -76,28 +96,63 @@ export async function searchPlacePredictions(
     }
   }
 
-  try {
-    const { suggestions } =
-      await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request)
-    return suggestions
-      .map((s) => s.placePrediction)
-      .filter((p): p is google.maps.places.PlacePrediction => !!p)
-      .map((p) => ({
-        placeId: p.placeId,
-        primaryText: p.mainText?.text ?? p.text.text,
-        secondaryText: p.secondaryText?.text ?? '',
-        description: p.text.text,
-        isEstablishment: (p.types ?? []).includes('establishment')
-      }))
-  } catch {
-    return []
-  }
+  const { suggestions } = await autocomplete.fetchAutocompleteSuggestions(request)
+  return suggestions
+    .map((s) => s.placePrediction)
+    .filter((p): p is google.maps.places.PlacePrediction => !!p)
+    .map(mapCurrentPrediction)
 }
 
-/** Establishments within `radiusM` of a point — used after an address pick
- *  to surface the actual venue (no type filter, since softball venues are
- *  named "Park" / "Complex" / "Sports Complex" / "Fields" etc). Closest /
- *  most-prominent first. Returns `[]` when unavailable. */
+function searchLegacyPlacePredictions(
+  google: typeof globalThis.google,
+  query: string,
+  opts?: SearchOptions
+): Promise<PlacePrediction[]> {
+  if (!google.maps.places.AutocompleteService) return Promise.resolve([])
+
+  return new Promise((resolve) => {
+    const service = new google.maps.places.AutocompleteService()
+    const request: google.maps.places.AutocompletionRequest = {
+      input: query,
+      sessionToken: ensureSessionToken(google)
+    }
+    if (opts?.types?.length) request.types = opts.types
+    if (opts?.biasCenter) {
+      request.location = new google.maps.LatLng(opts.biasCenter.lat, opts.biasCenter.lng)
+      request.radius = BIAS_RADIUS_M
+    }
+
+    service.getPlacePredictions(request, (predictions, status) => {
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) {
+        resolve([])
+        return
+      }
+      resolve(predictions.map(mapLegacyPrediction).filter((p): p is PlacePrediction => !!p))
+    })
+  })
+}
+
+/** Live Places Autocomplete predictions for a free-text query. */
+export async function searchPlacePredictions(
+  query: string,
+  opts?: SearchOptions
+): Promise<PlacePrediction[]> {
+  const q = query.trim()
+  if (q.length < 2) return []
+  const google = await loadGoogleMaps()
+  if (!google) return []
+
+  try {
+    const rows = await searchCurrentPlacePredictions(google, q, opts)
+    if (rows.length) return rows
+  } catch {
+    // Fall through to the legacy Maps JS Places API below.
+  }
+
+  return searchLegacyPlacePredictions(google, q, opts)
+}
+
+/** Establishments within `radiusM` of a point. */
 export async function findNearbyVenues(
   position: GeoPosition,
   radiusM: number = NEARBY_MATCH_RADIUS_M
@@ -124,19 +179,102 @@ export async function findNearbyVenues(
   }
 }
 
-/** Pull one address component's value out of a Place result. */
 function component(
-  components: google.maps.places.AddressComponent[] | undefined,
+  components: AddressComponentLike[] | undefined,
   type: string,
   useShort = false
 ): string | undefined {
   const hit = (components ?? []).find((c) => c.types.includes(type))
   if (!hit) return undefined
-  return (useShort ? hit.shortText : hit.longText) ?? undefined
+  if (useShort) return hit.shortText ?? hit.short_name ?? undefined
+  return hit.longText ?? hit.long_name ?? undefined
 }
 
-/** Split an international phone number ("+1 775-882-1234") into the
- *  dialling code ("+1") and the rest, falling back to the national form. */
+const US_STATE_CODES_BY_NAME: Record<string, string> = {
+  alabama: 'AL',
+  alaska: 'AK',
+  arizona: 'AZ',
+  arkansas: 'AR',
+  california: 'CA',
+  colorado: 'CO',
+  connecticut: 'CT',
+  delaware: 'DE',
+  'district of columbia': 'DC',
+  florida: 'FL',
+  georgia: 'GA',
+  hawaii: 'HI',
+  idaho: 'ID',
+  illinois: 'IL',
+  indiana: 'IN',
+  iowa: 'IA',
+  kansas: 'KS',
+  kentucky: 'KY',
+  louisiana: 'LA',
+  maine: 'ME',
+  maryland: 'MD',
+  massachusetts: 'MA',
+  michigan: 'MI',
+  minnesota: 'MN',
+  mississippi: 'MS',
+  missouri: 'MO',
+  montana: 'MT',
+  nebraska: 'NE',
+  nevada: 'NV',
+  'new hampshire': 'NH',
+  'new jersey': 'NJ',
+  'new mexico': 'NM',
+  'new york': 'NY',
+  'north carolina': 'NC',
+  'north dakota': 'ND',
+  ohio: 'OH',
+  oklahoma: 'OK',
+  oregon: 'OR',
+  pennsylvania: 'PA',
+  'rhode island': 'RI',
+  'south carolina': 'SC',
+  'south dakota': 'SD',
+  tennessee: 'TN',
+  texas: 'TX',
+  utah: 'UT',
+  vermont: 'VT',
+  virginia: 'VA',
+  washington: 'WA',
+  'west virginia': 'WV',
+  wisconsin: 'WI',
+  wyoming: 'WY'
+}
+
+function normalizeStateText(value: string): string | null {
+  const cleaned = value
+    .replace(/\b\d{5}(?:-\d{4})?\b/g, '')
+    .replace(/\b(?:usa|u\.s\.a\.|united states|united states of america)\b/gi, '')
+    .replace(/[.]/g, '')
+    .trim()
+  if (!cleaned) return null
+  const code = cleaned.match(/\b([A-Za-z]{2})\b/)
+  if (code) return code[1].toUpperCase()
+  return US_STATE_CODES_BY_NAME[cleaned.toLowerCase()] ?? cleaned
+}
+
+/** Best-effort fallback for manually typed values like "East Rutherford, NJ". */
+export function parseCityStateText(value: string): { city: string; state: string } | null {
+  const parts = value.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length >= 2) {
+    for (let i = parts.length - 1; i >= 1; i -= 1) {
+      const state = normalizeStateText(parts[i])
+      if (!state) continue
+      const city = parts[i - 1].replace(/\b\d{5}(?:-\d{4})?\b/g, '').trim()
+      if (city) return { city, state }
+    }
+  }
+
+  const compact = value
+    .trim()
+    .match(/([A-Za-z][A-Za-z .'-]+?)\s+([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/)
+  if (!compact) return null
+  return { city: compact[1].trim(), state: compact[2].toUpperCase() }
+}
+
 function splitPhone(
   international?: string,
   national?: string
@@ -148,8 +286,7 @@ function splitPhone(
   return national ? { phone: national } : {}
 }
 
-/** Resolve a place by id into a `PlaceLookup` (name, address parts, geo,
- *  phone, rating, photos, website). Returns `null` when unavailable. */
+/** Resolve a place by id into a PlaceLookup. */
 export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | null> {
   const google = await loadGoogleMaps()
   if (!google) return null
@@ -170,12 +307,11 @@ export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | nul
         'websiteURI'
       ]
     })
-    // The search→pick cycle is complete — end the autocomplete billing session.
     sessionToken = null
 
     const loc = place.location
     const position = loc ? { lat: loc.lat(), lng: loc.lng() } : { lat: 0, lng: 0 }
-    const comps = place.addressComponents
+    const comps = place.addressComponents as AddressComponentLike[] | undefined
     const streetNumber = component(comps, 'street_number')
     const route = component(comps, 'route')
     const street = [streetNumber, route].filter(Boolean).join(' ') || undefined
@@ -183,6 +319,7 @@ export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | nul
       place.internationalPhoneNumber ?? undefined,
       place.nationalPhoneNumber ?? undefined
     )
+
     return {
       placeId,
       name: place.displayName ?? '',
@@ -200,11 +337,92 @@ export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | nul
       phoneCountryCode,
       rating: place.rating ?? undefined,
       reviewCount: place.userRatingCount ?? undefined,
-      photos: (place.photos ?? []).slice(0, 6).map((p) => p.getURI({ maxWidth: 480 })),
+      photos: (place.photos ?? [])
+        .slice(0, 6)
+        .map((p) => photoUrl(p))
+        .filter((url): url is string => !!url),
       website: place.websiteURI ?? undefined
     }
   } catch {
-    sessionToken = null
-    return null
+    return fetchPlaceByIdLegacy(google, placeId)
   }
+}
+
+function fetchPlaceByIdLegacy(
+  google: typeof globalThis.google,
+  placeId: string
+): Promise<PlaceLookup | null> {
+  if (typeof document === 'undefined' || !google.maps.places.PlacesService) {
+    sessionToken = null
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve) => {
+    const host = document.createElement('div')
+    host.style.display = 'none'
+    document.body.appendChild(host)
+
+    const service = new google.maps.places.PlacesService(host)
+    const request = {
+      placeId,
+      fields: [
+        'name',
+        'formatted_address',
+        'address_components',
+        'geometry',
+        'formatted_phone_number',
+        'international_phone_number',
+        'rating',
+        'user_ratings_total',
+        'photos',
+        'website'
+      ],
+      sessionToken: sessionToken ?? undefined
+    } as google.maps.places.PlaceDetailsRequest & {
+      sessionToken?: google.maps.places.AutocompleteSessionToken
+    }
+
+    service.getDetails(request, (place, status) => {
+      host.remove()
+      sessionToken = null
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
+        resolve(null)
+        return
+      }
+
+      const loc = place.geometry?.location
+      const comps = place.address_components as AddressComponentLike[] | undefined
+      const streetNumber = component(comps, 'street_number')
+      const route = component(comps, 'route')
+      const street = [streetNumber, route].filter(Boolean).join(' ') || undefined
+      const { phoneCountryCode, phone } = splitPhone(
+        place.international_phone_number ?? undefined,
+        place.formatted_phone_number ?? undefined
+      )
+
+      resolve({
+        placeId,
+        name: place.name ?? '',
+        formattedAddress: place.formatted_address ?? '',
+        street,
+        city:
+          component(comps, 'locality') ??
+          component(comps, 'postal_town') ??
+          component(comps, 'sublocality'),
+        state: component(comps, 'administrative_area_level_1', true),
+        postalCode: component(comps, 'postal_code'),
+        countryCode: component(comps, 'country', true),
+        position: loc ? { lat: loc.lat(), lng: loc.lng() } : { lat: 0, lng: 0 },
+        phone,
+        phoneCountryCode,
+        rating: place.rating ?? undefined,
+        reviewCount: place.user_ratings_total ?? undefined,
+        photos: (place.photos ?? [])
+          .slice(0, 6)
+          .map((p) => photoUrl(p))
+          .filter((url): url is string => !!url),
+        website: place.website ?? undefined
+      })
+    })
+  })
 }

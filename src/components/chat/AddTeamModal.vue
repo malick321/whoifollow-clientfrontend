@@ -18,7 +18,7 @@ import AppIcon from '../AppIcon.vue'
 import { fetchSportTypes } from '../../api/sportTypes'
 import { fetchAgeGroups } from '../../api/ageRatingCatalogue'
 import { fetchFriends, type ChatFriend } from '../../api/friends'
-import { fetchPlaceById, searchPlacePredictions } from '../../api/placesLookup'
+import { fetchPlaceById, parseCityStateText, searchPlacePredictions } from '../../api/placesLookup'
 import googleG from '../../assets/google-g.svg'
 import {
   createTeam,
@@ -107,6 +107,15 @@ async function pickPlace(p: PlacePrediction) {
   cityStateQuery.value =
     place.formattedAddress ||
     (city.value && state.value ? `${city.value}, ${state.value}` : (place.city || p.primaryText))
+}
+
+function applyTypedCityState() {
+  if (city.value.trim() && state.value.trim()) return
+  const parsed = parseCityStateText(cityStateQuery.value)
+  if (!parsed) return
+  city.value = parsed.city
+  state.value = parsed.state
+  cityStateQuery.value = `${parsed.city}, ${parsed.state}`
 }
 
 // ── Catalogues ───────────────────────────────────────────────────
@@ -243,6 +252,7 @@ async function submit() {
   if (!canSubmit.value) return
   saving.value = true
   try {
+    applyTypedCityState()
     const sportName = sportTypes.value.find((s) => s.id === sportsTypeId.value)?.name
     const ageName = ageGroups.value.find((a) => a.id === ageGroupId.value)?.name
     const payload: CreateTeamPayload = {
