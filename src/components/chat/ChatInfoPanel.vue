@@ -95,6 +95,11 @@ const sportTypes = ref<SportType[]>([])
 const sportTypesLoading = ref(false)
 const sportTypesLoaded = ref(false)
 
+function sportIdFromCategoryLabel(label: string | null | undefined): string {
+  const match = (label ?? '').trim().match(/^(\d+)\s+Sports$/i)
+  return match?.[1] ?? ''
+}
+
 async function loadSportTypeCatalog() {
   if (sportTypesLoaded.value || sportTypesLoading.value) return
   sportTypesLoading.value = true
@@ -117,7 +122,9 @@ async function loadDetail(force = false) {
     const team = await fetchTeamDetail(id)
     detail.value = team
     detailLoadedTeamId.value = id
-    if (team?.sportTypeId) void loadSportTypeCatalog()
+    if (team?.sportTypeId || sportIdFromCategoryLabel(team?.categoryLabel)) {
+      void loadSportTypeCatalog()
+    }
   } catch (err) {
     console.warn('[chat] fetchTeamDetail failed', err)
   } finally {
@@ -133,7 +140,9 @@ function categoryText(category: string): string {
 }
 
 const sportTypeName = computed(() => {
-  const id = detail.value?.sportTypeId?.trim()
+  const id =
+    detail.value?.sportTypeId?.trim() ||
+    sportIdFromCategoryLabel(detail.value?.categoryLabel)
   if (!id) return ''
   return sportTypes.value.find((s) => s.id === id)?.name ?? ''
 })
@@ -141,11 +150,13 @@ const sportTypeName = computed(() => {
 const categoryLabel = computed(() => {
   const d = detail.value
   if (!d) return conversation.value?.team?.name || ''
+  const raw = d.categoryLabel.trim()
+  const rawNumericSports = !!sportIdFromCategoryLabel(raw)
   const fallback = categoryText(d.category)
-  if (d.category.trim().toLowerCase() === 'sports') {
-    if (sportTypeName.value) return `${sportTypeName.value} ${fallback}`.trim()
-    const raw = d.categoryLabel.trim()
-    return raw && !/^\d+(?:\s|$)/.test(raw) ? raw : fallback
+  if (d.category.trim().toLowerCase() === 'sports' || rawNumericSports) {
+    const category = fallback || 'Sports'
+    if (sportTypeName.value) return `${sportTypeName.value} ${category}`.trim()
+    return raw && !/^\d+(?:\s|$)/.test(raw) ? raw : category
   }
   return d.categoryLabel.trim() || fallback
 })
