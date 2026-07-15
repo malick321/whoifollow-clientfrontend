@@ -23,6 +23,7 @@ import { formatFileSize } from './chat-format'
 import { getAuthUserChatId } from '../../auth-session'
 import { useChatStore } from '../../stores/chat'
 import { useChatLockStore } from '../../stores/chatLock'
+import { fetchSportTypes } from '../../api/sportTypes'
 import {
   archiveTeam,
   cancelTeamInvite,
@@ -45,6 +46,7 @@ import {
 import { pushToast } from '../../toast-center'
 import { getLegacyJson } from '../../api/client'
 import { confirmDialog } from '../../confirm-center'
+import type { SportType } from '../../types'
 
 const props = defineProps<{
   conversationId: string
@@ -89,6 +91,22 @@ const teamId = computed(
 const detail = ref<ChatTeamDetail | null>(null)
 const detailLoading = ref(false)
 const detailLoadedTeamId = ref('')
+const sportTypes = ref<SportType[]>([])
+const sportTypesLoading = ref(false)
+const sportTypesLoaded = ref(false)
+
+async function loadSportTypeCatalog() {
+  if (sportTypesLoaded.value || sportTypesLoading.value) return
+  sportTypesLoading.value = true
+  try {
+    sportTypes.value = await fetchSportTypes()
+    sportTypesLoaded.value = true
+  } catch (err) {
+    console.warn('[chat] fetchSportTypes failed', err)
+  } finally {
+    sportTypesLoading.value = false
+  }
+}
 
 async function loadDetail(force = false) {
   const id = teamId.value
@@ -96,8 +114,10 @@ async function loadDetail(force = false) {
   if (!force && detail.value && detailLoadedTeamId.value === id) return
   detailLoading.value = true
   try {
-    detail.value = await fetchTeamDetail(id)
+    const team = await fetchTeamDetail(id)
+    detail.value = team
     detailLoadedTeamId.value = id
+    if (team?.sportTypeId) void loadSportTypeCatalog()
   } catch (err) {
     console.warn('[chat] fetchTeamDetail failed', err)
   } finally {
@@ -105,9 +125,30 @@ async function loadDetail(force = false) {
   }
 }
 
-const categoryLabel = computed(
-  () => detail.value?.categoryLabel || conversation.value?.team?.name || ''
-)
+function categoryText(category: string): string {
+  const normalized = category.trim().toLowerCase()
+  if (normalized === 'sports') return 'Sports'
+  if (normalized === 'work') return 'Work'
+  return category.trim()
+}
+
+const sportTypeName = computed(() => {
+  const id = detail.value?.sportTypeId?.trim()
+  if (!id) return ''
+  return sportTypes.value.find((s) => s.id === id)?.name ?? ''
+})
+
+const categoryLabel = computed(() => {
+  const d = detail.value
+  if (!d) return conversation.value?.team?.name || ''
+  const fallback = categoryText(d.category)
+  if (d.category.trim().toLowerCase() === 'sports') {
+    if (sportTypeName.value) return `${sportTypeName.value} ${fallback}`.trim()
+    const raw = d.categoryLabel.trim()
+    return raw && !/^\d+(?:\s|$)/.test(raw) ? raw : fallback
+  }
+  return d.categoryLabel.trim() || fallback
+})
 const ageGenderLabel = computed(() => detail.value?.ageGenderLabel ?? '')
 const isAdmin = computed(() => detail.value?.isAdmin ?? false)
 const logoUrl = computed(
