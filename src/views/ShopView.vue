@@ -234,10 +234,12 @@ watch(nextCursor, async () => {
 
 <style scoped>
 .shop-view {
+  width: 100%;
   max-width: 1240px;
   margin: 0 auto;
   padding: 24px 20px 48px;
   font-family: var(--font-body);
+  overflow-x: hidden;
 }
 
 /* ── Hero band ──────────────────────────────────────────────────── */
@@ -359,16 +361,22 @@ watch(nextCursor, async () => {
   grid-template-columns: 230px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
+  min-width: 0;
 }
 
-@media (max-width: 860px) {
+.shop-view__grid-wrap {
+  min-width: 0;
+}
+
+@media (max-width: 920px) {
   .shop-view__body {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .shop-view__grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 12px;
   }
 }
@@ -378,7 +386,7 @@ watch(nextCursor, async () => {
   top: 16px;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 920px) {
   .shop-view__sidebar {
     position: static;
   }
@@ -456,7 +464,7 @@ watch(nextCursor, async () => {
 
 @media (max-width: 720px) {
   .shop-view {
-    padding: 12px 10px calc(36px + var(--member-bottom-nav-height, 64px));
+    padding: 12px 10px calc(48px + var(--member-bottom-nav-height, 76px));
   }
 
   .shop-hero {
@@ -503,12 +511,8 @@ watch(nextCursor, async () => {
     font-size: 0.82rem;
   }
 
-  .shop-view__body {
-    gap: 10px;
-  }
-
   .shop-view__grid {
-    gap: 10px;
+    gap: 12px;
   }
 }
 

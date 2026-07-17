@@ -254,6 +254,10 @@ async function onTeamCreated(conversation: ChatConversation | null) {
   .chat-view,
   .chat-view--info {
     grid-template-columns: 1fr;
+    height: calc(100vh - var(--member-topbar-height, 52px) - var(--member-bottom-nav-height, 76px));
+    height: calc(100dvh - var(--member-topbar-height, 52px) - var(--member-bottom-nav-height, 76px));
+    max-height: calc(100vh - var(--member-topbar-height, 52px) - var(--member-bottom-nav-height, 76px));
+    max-height: calc(100dvh - var(--member-topbar-height, 52px) - var(--member-bottom-nav-height, 76px));
   }
 
   .chat-view__info {

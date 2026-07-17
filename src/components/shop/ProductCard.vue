@@ -78,6 +78,8 @@ const emit = defineEmits<{
 .product-card {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
   background: var(--surface-card);
   border: 1px solid var(--border-divider);
   border-radius: var(--radius-lg);
@@ -202,7 +204,7 @@ const emit = defineEmits<{
   cursor: default;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 920px) {
   .product-card:hover {
     transform: none;
   }
@@ -212,6 +214,7 @@ const emit = defineEmits<{
     align-items: stretch;
     min-height: 116px;
     border-radius: 10px;
+    max-width: 100%;
   }
 
   .product-card__media {

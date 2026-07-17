@@ -293,7 +293,7 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .app-shell--member {
     --member-topbar-height: 52px;
-    --member-bottom-nav-height: 62px;
+    --member-bottom-nav-height: calc(76px + env(safe-area-inset-bottom, 0px));
     --member-rail-width: 0px;
   }
 
@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
     min-height: calc(100vh - 52px);
     min-height: calc(100dvh - var(--member-topbar-height));
     padding-left: 0;
-    padding-bottom: var(--member-bottom-nav-height);
+    padding-bottom: calc(var(--member-bottom-nav-height) + 12px);
   }
 }
 </style>

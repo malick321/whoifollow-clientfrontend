@@ -433,10 +433,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .checkout {
+  width: 100%;
   max-width: 1160px;
   margin: 0 auto;
   padding: 28px 20px 64px;
   font-family: var(--font-body);
+  overflow-x: hidden;
 }
 
 .checkout__head {
@@ -495,6 +497,7 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 24px;
   align-items: start;
+  min-width: 0;
 }
 @media (max-width: 920px) {
   .checkout__grid {
@@ -608,6 +611,7 @@ onBeforeUnmount(() => {
   }
 }
 .summary-card {
+  min-width: 0;
   background: var(--surface-card);
   border: 1px solid var(--border-divider);
   border-radius: var(--radius-lg);
@@ -821,7 +825,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 560px) {
   .checkout {
-    padding: 18px 12px calc(36px + var(--member-bottom-nav-height, 64px));
+    padding: 18px 12px calc(56px + var(--member-bottom-nav-height, 76px));
   }
 
   .checkout__title {
@@ -846,6 +850,10 @@ onBeforeUnmount(() => {
     min-height: 44px;
     white-space: normal;
     line-height: 1.25;
+  }
+
+  .summary-card__reassure {
+    margin-bottom: 6px;
   }
 }
 </style>

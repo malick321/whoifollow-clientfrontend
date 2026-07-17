@@ -288,6 +288,22 @@ html:has(body.modal-open) {
   padding-right: var(--modal-scrollbar-width, 0);
 }
 
+@media (max-width: 720px) {
+  html.modal-open .app-shell--member .member-topbar,
+  html.modal-open .app-shell--member .member-rail,
+  html:has(body.modal-open) .app-shell--member .member-topbar,
+  html:has(body.modal-open) .app-shell--member .member-rail {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  html.modal-open .workspace-shell--member,
+  html:has(body.modal-open) .workspace-shell--member {
+    padding-bottom: 0;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
