@@ -746,4 +746,42 @@ async function submit() {
   font-size: 12px;
   color: var(--secondary);
 }
+
+@media (max-width: 560px) {
+  .add-team__section {
+    gap: 14px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+
+  .add-team__logo-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .add-team__logo {
+    width: 82px;
+    padding: 8px;
+  }
+
+  .add-team__logo-empty {
+    width: 48px;
+    height: 48px;
+  }
+
+  .add-team__seg {
+    width: 100%;
+  }
+
+  .add-team__seg-btn {
+    min-width: 0;
+    padding: 0 10px;
+  }
+
+  .add-team__friend-list,
+  .add-team__suggest {
+    max-height: min(220px, 38dvh);
+  }
+}
 </style>

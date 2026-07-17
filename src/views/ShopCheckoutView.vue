@@ -841,5 +841,11 @@ onBeforeUnmount(() => {
   .summary-card__promo-apply {
     width: 100%;
   }
+
+  .summary-card__place {
+    min-height: 44px;
+    white-space: normal;
+    line-height: 1.25;
+  }
 }
 </style>

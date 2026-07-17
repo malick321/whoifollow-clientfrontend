@@ -934,5 +934,30 @@ function mediaSubLabel(media: TaskMedia): string {
   .task-detail__add-step .secondary-button {
     grid-column: 1 / -1;
   }
+
+  .task-detail__header,
+  .task-detail__section {
+    border-radius: 10px;
+  }
+
+  .task-detail__section {
+    padding: 12px;
+  }
+
+  .task-detail__footer {
+    position: sticky;
+    bottom: calc(-28px - env(safe-area-inset-bottom));
+    z-index: 2;
+    margin: 4px -16px calc(-28px - env(safe-area-inset-bottom));
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--white);
+    box-shadow: 0 -10px 20px rgba(15, 23, 42, 0.08);
+  }
+
+  .task-detail__footer .danger-light-button {
+    width: 100%;
+    justify-content: center;
+    min-height: 42px;
+  }
 }
 </style>

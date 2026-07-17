@@ -550,9 +550,15 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
+}
+
+.thread__scroll > :first-child {
+  margin-top: auto;
 }
 
 .thread__loading,
@@ -617,6 +623,20 @@ onBeforeUnmount(() => {
 @media (max-width: 840px) {
   .thread__back {
     display: inline-flex;
+  }
+
+  .thread__header {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .thread__scroll {
+    padding: 10px 8px 12px;
+  }
+
+  .thread__jump {
+    right: 12px;
+    bottom: 74px;
   }
 }
 </style>

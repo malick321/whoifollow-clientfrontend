@@ -666,4 +666,55 @@ function close() {
   font-size: 1.2rem;
   line-height: 1;
 }
+
+@media (max-width: 560px) {
+  .invite-team__head {
+    align-items: flex-start;
+  }
+
+  .invite-team__head-copy .slide-modal-panel__title {
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  .invite-team__head-copy .slide-modal-panel__subtitle {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .invite-team__tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-radius: 20px;
+  }
+
+  .invite-team__tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .invite-team__tab {
+    flex: 0 0 auto;
+    min-width: 108px;
+    white-space: nowrap;
+  }
+
+  .invite-team__contact-row,
+  .invite-team__role-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .invite-team__player-head {
+    min-height: 42px;
+  }
+
+  .invite-team__copy {
+    align-self: stretch;
+  }
+
+  .invite-team__friend-list {
+    max-height: min(220px, 34dvh);
+  }
+}
 </style>

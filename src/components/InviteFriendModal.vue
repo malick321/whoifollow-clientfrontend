@@ -260,4 +260,15 @@ function close() {
   font-size: 0.82rem;
   font-weight: 400;
 }
+
+@media (max-width: 560px) {
+  .invite-friend__contact-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .invite-friend__panel {
+    gap: 14px;
+  }
+}
 </style>

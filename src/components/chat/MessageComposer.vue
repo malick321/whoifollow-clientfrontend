@@ -578,6 +578,28 @@ html.dark-mode .composer__attachment-preview {
 }
 
 @media (max-width: 520px) {
+  .composer {
+    padding: 8px 8px 9px;
+  }
+
+  .composer__bar {
+    gap: 6px;
+  }
+
+  .composer__attach,
+  .composer__send {
+    width: 36px;
+    height: 36px;
+  }
+
+  .composer__input {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    border-radius: 16px;
+  }
+
   .composer__attachment,
   .composer__attachment--audio {
     max-width: 100%;

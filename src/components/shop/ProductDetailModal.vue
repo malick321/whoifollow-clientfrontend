@@ -193,6 +193,15 @@ async function add() {
 @media (max-width: 720px) {
   .product-detail {
     grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .product-detail__hero {
+    max-height: 42dvh;
+  }
+
+  .product-detail__add {
+    min-height: 44px;
   }
 }
 

@@ -202,7 +202,7 @@ const emit = defineEmits<{
   cursor: default;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .product-card:hover {
     transform: none;
   }
@@ -257,6 +257,7 @@ const emit = defineEmits<{
     min-height: 30px;
     padding: 6px 8px;
     font-size: 0.74rem;
+    white-space: nowrap;
   }
 }
 

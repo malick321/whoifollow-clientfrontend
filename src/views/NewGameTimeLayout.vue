@@ -240,6 +240,20 @@ const activeSectionKey = computed(() => {
     white-space: nowrap;
   }
 
+  .ngt-nav .association-users__nav-item--active {
+    background: var(--primary-light-3);
+    border-color: var(--primary-light-2);
+    color: var(--primary);
+  }
+
+  .ngt-nav .association-users__nav-item--active .association-users__nav-icon {
+    background: var(--primary);
+  }
+
+  .ngt-nav .association-users__nav-item--inactive {
+    color: var(--secondary);
+  }
+
   .ngt-foryou-item,
   .ngt-section-head {
     order: 1;

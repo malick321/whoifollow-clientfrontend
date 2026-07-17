@@ -111,10 +111,20 @@ const emit = defineEmits<{
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     gap: 8px;
     padding-bottom: 2px;
   }
+  .shop-categories__list::-webkit-scrollbar {
+    display: none;
+  }
+  .shop-categories__list > li {
+    flex: 0 0 auto;
+  }
   .shop-categories__item {
+    width: auto;
+    min-width: max-content;
     white-space: nowrap;
     background: var(--surface-pill);
   }

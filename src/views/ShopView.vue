@@ -365,6 +365,12 @@ watch(nextCursor, async () => {
   .shop-view__body {
     grid-template-columns: 1fr;
   }
+
+  .shop-view__grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 }
 
 .shop-view__sidebar {
@@ -502,8 +508,6 @@ watch(nextCursor, async () => {
   }
 
   .shop-view__grid {
-    display: flex;
-    flex-direction: column;
     gap: 10px;
   }
 }

@@ -417,9 +417,40 @@ onBeforeUnmount(revokePreviews)
 }
 
 @media (max-width: 560px) {
+  .opinion-composer {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .opinion-composer__row {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .opinion-composer__input {
+    min-height: 58px;
+    border-radius: 18px;
+    padding: 11px 14px;
+    line-height: 1.45;
+  }
+
   .opinion-composer__previews,
   .opinion-composer__actions {
     padding-left: 0;
+  }
+
+  .opinion-composer__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .opinion-composer__tools {
+    gap: 6px;
+  }
+
+  .opinion-composer__submit {
+    width: 100%;
+    justify-content: center;
   }
 }
 </style>
