@@ -1801,4 +1801,99 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 @media (max-width: 560px) {
   .team-detail__stat-tiles { grid-template-columns: repeat(2, 1fr); }
 }
+
+@media (max-width: 720px) {
+  .team-detail {
+    padding: 16px 12px calc(32px + var(--member-bottom-nav-height, 64px));
+  }
+
+  .team-detail__record {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .team-detail__record-item {
+    min-width: 0;
+    padding: 9px 8px;
+  }
+
+  .team-detail__hero-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .td-hero-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .team-detail__tabs {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding-right: 12px;
+    padding-left: 12px;
+    scrollbar-width: none;
+  }
+
+  .team-detail__tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .td-filter--split {
+    align-items: stretch;
+  }
+
+  .td-search-wrap {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .td-members-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .td-members-actions {
+    justify-content: flex-start;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .td-toolbar-btn {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .team-detail__table-wrap {
+    max-height: none;
+    margin-right: -12px;
+    margin-left: -12px;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .team-detail__table th,
+  .team-detail__table td {
+    padding: 8px 6px;
+  }
+
+  .td-chat-widget {
+    right: 8px;
+    bottom: calc(var(--member-bottom-nav-height, 64px) + 8px);
+    width: calc(100vw - 16px);
+    height: min(560px, calc(100vh - var(--member-topbar-height, 56px) - var(--member-bottom-nav-height, 64px) - 24px));
+  }
+}
+
+@media (max-width: 420px) {
+  .td-toolbar-btn {
+    flex-basis: 100%;
+  }
+
+  .td-event__record {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
 </style>

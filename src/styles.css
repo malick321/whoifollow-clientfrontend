@@ -15708,3 +15708,86 @@ html.dark-mode .poolplay-item__kebab:hover { background: rgba(45, 140, 240, 0.16
 @media (max-width: 520px) {
   .poolplay-item { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
+
+/* Member mobile safety net -------------------------------------------------
+   Member tabs share portal list/toolbars, but their chrome collapses to a
+   fixed top bar plus bottom rail on phones. Scope this to member pages so the
+   association admin portal keeps its own responsive rules. */
+@media (max-width: 720px) {
+  .app-shell--member .association-users__main,
+  .app-shell--member .association-users__main--wide {
+    max-width: 100%;
+    padding-right: 12px;
+    padding-bottom: calc(28px + var(--member-bottom-nav-height, 64px));
+    padding-left: 12px;
+  }
+
+  .app-shell--member .association-users__header {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .app-shell--member .association-users__toolbar {
+    position: static;
+    top: auto;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px 12px;
+    scrollbar-width: none;
+  }
+
+  .app-shell--member .association-users__toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-shell--member .association-users__toolbar > * {
+    flex: 0 0 auto;
+  }
+
+  .app-shell--member .association-users__filter {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-shell--member .association-users__filter::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-shell--member .association-users__filter-btn {
+    min-width: max-content;
+  }
+
+  .app-shell--member .association-users__search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .app-shell--member .association-users__list {
+    border-radius: 0 0 8px 8px;
+  }
+
+  .app-shell--member .association-users__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .app-shell--member .association-users__row-identity {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell--member .association-users__main,
+  .app-shell--member .association-users__main--wide {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .app-shell--member .association-users__toolbar {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+}

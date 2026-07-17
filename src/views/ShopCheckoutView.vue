@@ -818,4 +818,28 @@ onBeforeUnmount(() => {
   font-size: 0.74rem;
   color: var(--text-light);
 }
+
+@media (max-width: 560px) {
+  .checkout {
+    padding: 18px 12px calc(36px + var(--member-bottom-nav-height, 64px));
+  }
+
+  .checkout__title {
+    font-size: 1.42rem;
+  }
+
+  .checkout-card__head,
+  .checkout-card__body,
+  .summary-card {
+    padding: 16px;
+  }
+
+  .summary-card__promo-row {
+    flex-direction: column;
+  }
+
+  .summary-card__promo-apply {
+    width: 100%;
+  }
+}
 </style>

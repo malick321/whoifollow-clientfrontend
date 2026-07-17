@@ -733,8 +733,20 @@ async function confirmDelete() {
 }
 
 @media (max-width: 720px) {
-  .lifebook-list { padding: 20px 16px 48px; }
+  .lifebook-list { padding: 20px 16px calc(48px + var(--member-bottom-nav-height, 64px)); }
   .lifebook-list__head { flex-direction: column; align-items: flex-start; }
   .book-shelf { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 28px 18px; }
+}
+
+@media (max-width: 420px) {
+  .lifebook-list {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .book-shelf {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 12px;
+  }
 }
 </style>

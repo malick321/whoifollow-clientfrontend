@@ -447,4 +447,36 @@ watch(nextCursor, async () => {
   opacity: 0.6;
   cursor: default;
 }
+
+@media (max-width: 520px) {
+  .shop-view {
+    padding: 16px 12px calc(36px + var(--member-bottom-nav-height, 64px));
+  }
+
+  .shop-hero {
+    padding: 18px 16px;
+    margin-bottom: 18px;
+    border-radius: 10px;
+  }
+
+  .shop-hero__search {
+    margin-top: 16px;
+    border-radius: 10px;
+  }
+
+  .shop-view__body {
+    gap: 16px;
+  }
+
+  .shop-view__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .shop-view__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 </style>

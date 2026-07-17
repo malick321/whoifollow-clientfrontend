@@ -174,6 +174,98 @@ const SECTIONS: Section[] = [
   }
 }
 
+@media (max-width: 720px) {
+  .ngt-shell {
+    min-height: calc(100vh - var(--member-topbar-height, 56px) - var(--member-bottom-nav-height, 64px));
+  }
+
+  .ngt-rail {
+    position: sticky;
+    top: var(--member-topbar-height, 56px);
+    z-index: 8;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-divider);
+    background: var(--surface-card);
+  }
+
+  .ngt-rail-title {
+    display: none;
+  }
+
+  .ngt-nav {
+    flex-direction: row;
+    gap: 6px;
+    margin-top: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .ngt-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ngt-nav .association-users__nav-item {
+    flex: 0 0 auto;
+    min-height: 38px;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--border-divider);
+    border-radius: 999px;
+    background: var(--surface-btn-solid, var(--surface-card));
+    white-space: nowrap;
+  }
+
+  .ngt-section-head {
+    opacity: 0.72;
+  }
+
+  .ngt-subitem {
+    height: 38px;
+    padding-left: 12px;
+  }
+
+  :global(.app-shell--member .ngt-cards),
+  :global(.app-shell--member .ngt-acards),
+  :global(.app-shell--member .ngt-sec__grid),
+  :global(.app-shell--member .ngt-foryou__skel-grid) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  :global(.app-shell--member .association-events__row.association-users__row),
+  :global(.app-shell--member .association-teams__row.association-users__row) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px;
+  }
+
+  :global(.app-shell--member .association-events__row-middle) {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  :global(.app-shell--member .association-events__row-info) {
+    align-items: flex-start;
+  }
+
+  :global(.app-shell--member .association-events__row-link) {
+    text-align: left;
+  }
+
+  :global(.app-shell--member .association-events__follow-btn) {
+    width: 100%;
+    justify-content: center;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .ngt-nav .association-users__nav-item {
+    padding: 0 10px;
+    font-size: 0.8rem;
+  }
+}
+
 /* Rail title — sits above the nav (where his portal shows the association
    brand block). Weight 500 to respect the no-bold rule. */
 .ngt-rail-title {
@@ -213,4 +305,11 @@ const SECTIONS: Section[] = [
 .ngt-icon--calendar { -webkit-mask-image: url('../assets/calendar.svg'); mask-image: url('../assets/calendar.svg'); }
 .ngt-icon--teams { -webkit-mask-image: url('../assets/teams.svg'); mask-image: url('../assets/teams.svg'); }
 .ngt-icon--association { -webkit-mask-image: url('../assets/association.svg'); mask-image: url('../assets/association.svg'); }
+
+@media (max-width: 720px) {
+  .ngt-subitem {
+    height: 38px;
+    padding-left: 12px;
+  }
+}
 </style>

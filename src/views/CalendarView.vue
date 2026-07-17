@@ -654,4 +654,75 @@ html.dark-mode .calendar-page :deep(.fc-event:hover) {
     font-size: 1.05rem;
   }
 }
+
+@media (max-width: 560px) {
+  .calendar-page {
+    gap: 14px;
+    padding-top: 16px;
+  }
+
+  .calendar-page__copy {
+    font-size: 0.88rem;
+  }
+
+  .calendar-page__legend {
+    gap: 6px;
+  }
+
+  .calendar-page__legend-item {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+  }
+
+  .calendar-page__surface {
+    border-radius: 8px;
+  }
+
+  .calendar-page__toolbar {
+    flex-wrap: wrap;
+    padding: 12px;
+  }
+
+  .calendar-page :deep(.fc) {
+    padding: 8px 6px;
+  }
+
+  .calendar-page :deep(.fc .fc-toolbar-chunk) {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .calendar-page :deep(.fc .fc-toolbar-title) {
+    width: 100%;
+    text-align: center;
+    font-size: 1rem;
+  }
+
+  .calendar-page :deep(.fc .fc-button-primary) {
+    padding: 6px 10px;
+    font-size: 0.76rem;
+  }
+
+  .calendar-page :deep(.fc-col-header-cell-cushion) {
+    padding: 4px 2px;
+    font-size: 0.64rem;
+  }
+
+  .calendar-page :deep(.fc-daygrid-day-number) {
+    padding: 4px;
+    font-size: 0.72rem;
+  }
+
+  .calendar-page :deep(.fc-event) {
+    padding: 1px 4px;
+    font-size: 0.68rem;
+  }
+
+  .calendar-page :deep(.fc .fc-daygrid-day-frame) {
+    min-height: 58px;
+  }
+}
 </style>

@@ -462,4 +462,48 @@ function scopeLabel(): string {
   .pp-grid9 { grid-template-columns: repeat(5,1fr); }
   .pp-slash { grid-template-columns: repeat(2,1fr); }
 }
+
+@media (max-width: 520px) {
+  .pp {
+    padding: 8px 10px calc(32px + var(--member-bottom-nav-height, 64px));
+  }
+
+  .pp-demobar {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pp-hero {
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .pp-hero__row {
+    align-items: flex-start;
+  }
+
+  .pp-hero__row :deep(.team-avatar-mark) {
+    width: 64px;
+    height: 64px;
+    font-size: 1.45rem;
+  }
+
+  .pp-hero__name {
+    font-size: 1.25rem;
+  }
+
+  .pp-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pp-panel {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .pp-grid9 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 </style>

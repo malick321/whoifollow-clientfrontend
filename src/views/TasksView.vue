@@ -784,4 +784,63 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
+
+@media (max-width: 640px) {
+  .tasks-page {
+    gap: 14px;
+    padding-top: 16px;
+  }
+
+  .tasks-page__header {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .tasks-page__copy {
+    font-size: 0.88rem;
+  }
+
+  .tasks-page__progress {
+    width: 50px;
+    height: 50px;
+  }
+
+  .tasks-page__list-panel {
+    padding: 12px;
+  }
+
+  .tasks-page__filters {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tasks-page__filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tasks-page__filter {
+    flex: 0 0 auto;
+    min-width: 92px;
+  }
+
+  .tasks-page__add {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-left: 10px;
+  }
+
+  .tasks-page__add-icon {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .tasks-page__header {
+    flex-direction: column;
+  }
+
+  .tasks-page__progress {
+    align-self: flex-end;
+    margin-top: -54px;
+  }
+}
 </style>

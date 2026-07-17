@@ -1307,6 +1307,47 @@ watch(isAuthenticated, (authenticated) => {
   }
 }
 
+@media (max-width: 720px) {
+  .opinions-page {
+    gap: 12px;
+    padding: 14px 10px calc(28px + var(--member-bottom-nav-height, 64px));
+  }
+
+  .opinions-profile {
+    display: none;
+  }
+
+  .opinions-nav {
+    position: sticky;
+    top: var(--member-topbar-height, 56px);
+    z-index: 5;
+    overflow-x: auto;
+    border-radius: 10px;
+    scrollbar-width: none;
+  }
+
+  .opinions-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .opinions-nav__item {
+    flex: 0 0 auto;
+    min-width: 118px;
+  }
+
+  .opinions-page__right {
+    margin-top: 6px;
+  }
+
+  .opinions-specialist-card:hover {
+    transform: none;
+  }
+
+  .opinions-page__feed :deep(.opinion-composer__previews) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 520px) {
   .opinions-page__header {
     align-items: flex-start;
@@ -1315,6 +1356,19 @@ watch(isAuthenticated, (authenticated) => {
 
   .opinions-page__refresh {
     width: 100%;
+  }
+
+  .opinions-specialist-card {
+    border-radius: 12px;
+    padding: 11px;
+  }
+
+  .opinions-specialist-card header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .opinions-specialist-card__tag {
+    display: none;
   }
 }
 </style>
