@@ -448,7 +448,7 @@ watch(nextCursor, async () => {
   cursor: default;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 720px) {
   .shop-view {
     padding: 12px 10px calc(36px + var(--member-bottom-nav-height, 64px));
   }
@@ -502,14 +502,14 @@ watch(nextCursor, async () => {
   }
 
   .shop-view__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 10px;
   }
 }
 
 @media (max-width: 360px) {
   .shop-view__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 }
