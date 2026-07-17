@@ -464,7 +464,7 @@ watch(nextCursor, async () => {
 
 @media (max-width: 720px) {
   .shop-view {
-    padding: 12px 10px calc(48px + var(--member-bottom-nav-height, 76px));
+    padding: 12px 10px calc(96px + var(--member-bottom-nav-height, 76px));
   }
 
   .shop-hero {
@@ -512,13 +512,15 @@ watch(nextCursor, async () => {
   }
 
   .shop-view__grid {
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
   }
 }
 
 @media (max-width: 360px) {
   .shop-view__grid {
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px;
   }
 }
 </style>
