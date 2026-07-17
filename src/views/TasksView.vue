@@ -41,7 +41,9 @@ const newTaskTitle = ref('')
 const isNarrow = ref(false)
 
 const selectedTask = computed(() =>
-  tasks.value.find((task) => task.id === selectedTaskId.value) ?? tasks.value[0] ?? null
+  selectedTaskId.value
+    ? tasks.value.find((task) => task.id === selectedTaskId.value) ?? null
+    : null
 )
 
 const completedCount = computed(() => tasks.value.filter((task) => task.isCompleted).length)
@@ -75,7 +77,7 @@ async function loadTasks() {
   try {
     tasks.value = await fetchTasks(filter.value)
     if (!tasks.value.some((task) => task.id === selectedTaskId.value)) {
-      selectedTaskId.value = tasks.value[0]?.id ?? null
+      selectedTaskId.value = isNarrow.value ? null : tasks.value[0]?.id ?? null
     }
   } catch (error) {
     tasks.value = []
@@ -268,6 +270,9 @@ function onFilterClick(next: TaskFilter) {
 
 function onResize() {
   isNarrow.value = typeof window !== 'undefined' && window.matchMedia('(max-width: 920px)').matches
+  if (!isNarrow.value && !selectedTaskId.value && tasks.value.length) {
+    selectedTaskId.value = tasks.value[0].id
+  }
 }
 
 onMounted(() => {

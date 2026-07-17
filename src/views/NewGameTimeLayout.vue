@@ -16,6 +16,9 @@
 // (not links) so there are no dead routes — add each as a real child route +
 // drop its `soon` flag as it's built.
 
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
 interface SubTab {
   label: string
   routeName?: string
@@ -25,14 +28,18 @@ interface Section {
   key: string
   label: string
   icon: 'calendar' | 'teams' | 'association'
+  defaultRouteName: string
   subs: SubTab[]
 }
+
+const route = useRoute()
 
 const SECTIONS: Section[] = [
   {
     key: 'events',
     label: 'Events',
     icon: 'calendar',
+    defaultRouteName: 'newgametime-discover-events',
     subs: [
       { label: 'Discover', routeName: 'newgametime-discover-events' },
       { label: 'My Events', routeName: 'newgametime-my-events' },
@@ -43,6 +50,7 @@ const SECTIONS: Section[] = [
     key: 'teams',
     label: 'Teams',
     icon: 'teams',
+    defaultRouteName: 'newgametime-discover-teams',
     subs: [
       { label: 'Discover', routeName: 'newgametime-discover-teams' },
       { label: 'My Teams', routeName: 'newgametime-my-teams' },
@@ -53,12 +61,21 @@ const SECTIONS: Section[] = [
     key: 'associations',
     label: 'Associations',
     icon: 'association',
+    defaultRouteName: 'newgametime-discover-associations',
     subs: [
       { label: 'Discover', routeName: 'newgametime-discover-associations' },
       { label: 'Following', routeName: 'newgametime-following-associations' }
     ]
   }
 ]
+
+const activeSectionKey = computed(() => {
+  const name = String(route.name ?? '')
+  if (name.includes('teams')) return 'teams'
+  if (name.includes('associations')) return 'associations'
+  if (name.includes('events')) return 'events'
+  return ''
+})
 </script>
 
 <template>
@@ -83,19 +100,26 @@ const SECTIONS: Section[] = [
           </a>
         </router-link>
         <template v-for="section in SECTIONS" :key="section.key">
-          <!-- Section header — same nav-item visual (icon + label, weight 500),
-               non-interactive (it's a group label, not a destination). -->
-          <div
-            class="association-users__nav-item association-users__nav-item--inactive ngt-section-head"
-            aria-hidden="true"
+          <!-- Section header doubles as a mobile-friendly entry point. -->
+          <router-link
+            v-slot="{ navigate, href }"
+            :to="{ name: section.defaultRouteName }"
+            custom
           >
-            <span
-              class="association-users__nav-icon"
-              :class="`ngt-icon--${section.icon}`"
-              aria-hidden="true"
-            ></span>
-            <span>{{ section.label }}</span>
-          </div>
+            <a
+              :href="href"
+              class="association-users__nav-item ngt-section-head"
+              :class="activeSectionKey === section.key ? 'association-users__nav-item--active' : 'association-users__nav-item--inactive'"
+              @click="navigate"
+            >
+              <span
+                class="association-users__nav-icon"
+                :class="`ngt-icon--${section.icon}`"
+                aria-hidden="true"
+              ></span>
+              <span>{{ section.label }}</span>
+            </a>
+          </router-link>
           <template v-for="sub in section.subs" :key="sub.label">
             <router-link
               v-if="sub.routeName"
@@ -106,7 +130,10 @@ const SECTIONS: Section[] = [
               <a
                 :href="href"
                 class="association-users__nav-item ngt-subitem"
-                :class="isActive ? 'association-users__nav-item--active' : 'association-users__nav-item--inactive'"
+                :class="[
+                  isActive ? 'association-users__nav-item--active' : 'association-users__nav-item--inactive',
+                  activeSectionKey === section.key ? 'ngt-subitem--current-section' : 'ngt-subitem--other-section'
+                ]"
                 @click="navigate"
               >
                 <span>{{ sub.label }}</span>
@@ -195,15 +222,11 @@ const SECTIONS: Section[] = [
 
   .ngt-nav {
     flex-direction: row;
+    flex-wrap: wrap;
     gap: 6px;
     margin-top: 0;
-    overflow-x: auto;
+    overflow: visible;
     padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .ngt-nav::-webkit-scrollbar {
-    display: none;
   }
 
   .ngt-nav .association-users__nav-item {
@@ -217,13 +240,24 @@ const SECTIONS: Section[] = [
     white-space: nowrap;
   }
 
+  .ngt-foryou-item,
   .ngt-section-head {
-    opacity: 0.72;
+    order: 1;
   }
 
   .ngt-subitem {
+    order: 2;
     height: 38px;
     padding-left: 12px;
+  }
+
+  .ngt-subitem--other-section {
+    display: none;
+  }
+
+  .ngt-subitem--current-section {
+    flex: 1 1 auto;
+    min-width: max-content;
   }
 
   :global(.app-shell--member .ngt-cards),
@@ -275,10 +309,9 @@ const SECTIONS: Section[] = [
   padding: 4px 14px 0;
 }
 
-/* Section header reuses `.association-users__nav-item` (weight 500, secondary
-   tint) but is a non-interactive group label — kill the hover affordance. */
-.ngt-section-head { cursor: default; }
-.ngt-section-head:hover { background: none; color: var(--secondary); }
+/* Section header reuses `.association-users__nav-item` and opens that
+   section's discover page, which is especially important on mobile. */
+.ngt-section-head { cursor: pointer; }
 
 /* Sub-tabs: indented under their section, a touch smaller/shorter than the
    section row so the hierarchy reads. Active/inactive tint comes from the
@@ -310,6 +343,10 @@ const SECTIONS: Section[] = [
   .ngt-subitem {
     height: 38px;
     padding-left: 12px;
+  }
+
+  .ngt-subitem--other-section {
+    display: none;
   }
 }
 </style>

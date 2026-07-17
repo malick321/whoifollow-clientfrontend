@@ -201,4 +201,44 @@ const emit = defineEmits<{
   opacity: 0.7;
   cursor: default;
 }
+
+@media (max-width: 520px) {
+  .product-card:hover {
+    transform: none;
+  }
+
+  .product-card__media {
+    aspect-ratio: 4 / 3;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .product-card__img {
+    object-fit: contain;
+    padding: 8px;
+  }
+
+  .product-card__img--placeholder {
+    padding: 0;
+  }
+
+  .product-card__body {
+    padding: 12px;
+  }
+
+  .product-card__name {
+    font-size: 0.88rem;
+  }
+
+  .product-card__price {
+    font-size: 0.95rem;
+  }
+
+  .product-card__cart-btn {
+    min-height: 34px;
+    padding: 8px 10px;
+    font-size: 0.8rem;
+  }
+}
 </style>
