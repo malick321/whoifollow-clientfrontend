@@ -593,4 +593,133 @@ watch(isAuthenticated, (authenticated) => {
     display: none;
   }
 }
+
+@media (max-width: 720px) {
+  .member-topbar {
+    height: var(--member-topbar-height, 52px);
+  }
+
+  .member-topbar__inner {
+    gap: 6px;
+    max-width: none;
+    padding: 0 8px;
+  }
+
+  .member-topbar__lead {
+    flex: 0 0 auto;
+    gap: 0;
+  }
+
+  .member-topbar__brand-img {
+    width: 24px;
+    height: 24px;
+  }
+
+  .member-topbar__search {
+    display: none;
+  }
+
+  .member-topbar__nav {
+    justify-content: flex-start;
+    gap: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .member-topbar__nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .member-topbar__item {
+    min-width: 42px;
+    padding: 5px 7px;
+  }
+
+  .member-topbar__item-ico {
+    width: 21px;
+    height: 21px;
+  }
+
+  .member-topbar__actions {
+    gap: 2px;
+  }
+
+  .member-topbar__assoc,
+  .member-topbar__invite {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .member-topbar__gopro {
+    display: none;
+  }
+
+  .member-topbar__icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .member-topbar__icon-btn[aria-label='Notifications'] {
+    display: none;
+  }
+
+  .member-topbar__menu {
+    position: fixed;
+    top: calc(var(--member-topbar-height, 52px) + 6px);
+    right: 8px;
+    max-width: calc(100vw - 16px);
+  }
+
+  .member-rail {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: var(--member-bottom-nav-height, 62px);
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 2px;
+    padding: 5px 8px max(5px, env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--border-divider, rgba(207, 220, 234, 0.85));
+    box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  .member-rail__item {
+    flex: 1 1 0;
+    width: auto;
+    max-width: 92px;
+    min-width: 0;
+    padding: 5px 2px 4px;
+  }
+
+  .member-rail__ico {
+    width: 20px;
+    height: 20px;
+  }
+
+  .member-rail__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .member-topbar__assoc {
+    display: none;
+  }
+
+  .member-topbar__item {
+    min-width: 38px;
+    padding-inline: 5px;
+  }
+}
 </style>

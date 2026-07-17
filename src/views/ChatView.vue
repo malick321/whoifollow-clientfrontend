@@ -154,8 +154,8 @@ async function onTeamCreated(conversation: ChatConversation | null) {
   /* Explicit viewport height so the 3-pane always fills the screen regardless
      of ancestor height — keeps the composer pinned to the bottom (no page
      scroll, no "message field below the fold"). `dvh` handles mobile chrome. */
-  height: calc(100vh - 56px);
-  height: calc(100dvh - 56px);
+  height: calc(100vh - var(--member-topbar-height, 56px) - var(--member-bottom-nav-height, 0px));
+  height: calc(100dvh - var(--member-topbar-height, 56px) - var(--member-bottom-nav-height, 0px));
   min-height: 0;
   overflow: hidden;
   /* Card surface (not the near-black --body-bg) so column gaps / the empty
@@ -226,9 +226,9 @@ async function onTeamCreated(conversation: ChatConversation | null) {
 
   .chat-view__info {
     position: fixed;
-    top: 56px;
+    top: var(--member-topbar-height, 56px);
     right: 0;
-    bottom: 0;
+    bottom: var(--member-bottom-nav-height, 0px);
     width: min(320px, 86vw);
     z-index: 40;
     box-shadow: var(--shadow, 0 10px 24px rgba(36, 60, 91, 0.08));
@@ -239,6 +239,10 @@ async function onTeamCreated(conversation: ChatConversation | null) {
   .chat-view,
   .chat-view--info {
     grid-template-columns: 1fr;
+  }
+
+  .chat-view__info {
+    width: min(360px, 100vw);
   }
 
   /* Narrow: show the list by default; once a conversation is open, swap
@@ -253,6 +257,13 @@ async function onTeamCreated(conversation: ChatConversation | null) {
 
   .chat-view--thread .chat-view__thread {
     display: block;
+  }
+}
+
+@media (max-width: 520px) {
+  .chat-view__info {
+    left: 0;
+    width: 100vw;
   }
 }
 </style>

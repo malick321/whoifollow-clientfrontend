@@ -118,7 +118,8 @@ onBeforeUnmount(() => {
     class="app-shell"
     :class="{
       'app-shell--authenticated': isAuthenticated,
-      'app-shell--has-topbar': showTopbar
+      'app-shell--has-topbar': showTopbar,
+      'app-shell--member': showMemberShell
     }"
   >
     <!-- Minimal top header for the association portal — WIF icon on
@@ -273,9 +274,34 @@ onBeforeUnmount(() => {
 /* Offset the content for the fixed member left rail (60px). The rail + header
    are rendered by MemberTopBar; this just keeps page content clear of the rail. */
 .workspace-shell--member {
+  --member-topbar-height: 56px;
+  --member-bottom-nav-height: 0px;
+  --member-rail-width: 60px;
   min-height: calc(100vh - 56px);
-  padding-left: 60px;
+  min-height: calc(100dvh - var(--member-topbar-height));
+  padding-left: var(--member-rail-width);
+  overflow-x: clip;
   background: var(--body-bg);
   color: var(--text);
+}
+
+.workspace-content {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .app-shell--member {
+    --member-topbar-height: 52px;
+    --member-bottom-nav-height: 62px;
+    --member-rail-width: 0px;
+  }
+
+  .workspace-shell--member {
+    min-height: calc(100vh - 52px);
+    min-height: calc(100dvh - var(--member-topbar-height));
+    padding-left: 0;
+    padding-bottom: var(--member-bottom-nav-height);
+  }
 }
 </style>
