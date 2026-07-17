@@ -302,6 +302,30 @@ html:has(body.modal-open) {
   html:has(body.modal-open) .workspace-shell--member {
     padding-bottom: 0;
   }
+
+  .app-shell--member:has(.chat-view--thread) {
+    --member-topbar-height: 0px;
+    --member-bottom-nav-height: 0px;
+  }
+
+  .app-shell--member:has(.chat-view--thread) .member-topbar,
+  .app-shell--member:has(.chat-view--thread) .member-rail {
+    display: none;
+  }
+
+  .app-shell--member:has(.chat-view--thread) .workspace-shell--member {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: 0;
+  }
+
+  .app-shell--member:has(.chat-view--thread) .chat-view,
+  .app-shell--member:has(.chat-view--thread) .chat-view--info {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
 }
 
 * {
