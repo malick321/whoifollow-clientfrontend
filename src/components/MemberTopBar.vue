@@ -111,6 +111,10 @@ async function refreshIdentity() {
   }
 }
 
+function refreshCart(force = false) {
+  if (force || !cart.loaded) void cart.load()
+}
+
 function toggleMenu() {
   menuOpen.value = !menuOpen.value
 }
@@ -134,11 +138,13 @@ function onDocClick(e: MouseEvent) {
 onMounted(() => {
   document.addEventListener('mousedown', onDocClick)
   void refreshIdentity()
+  refreshCart()
 })
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
 
 watch(isAuthenticated, (authenticated) => {
   if (authenticated) void refreshIdentity()
+  refreshCart(true)
 })
 </script>
 

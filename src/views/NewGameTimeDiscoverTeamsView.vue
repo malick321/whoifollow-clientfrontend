@@ -38,7 +38,7 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const search = ref('')
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 50
 const currentPage = ref(0)
 const lastPage = ref(1)
 const totalCount = ref(0)
@@ -71,13 +71,14 @@ async function loadFilterCatalogues() {
   ratingNameToId = new Map(rates.map((r) => [r.rate, r.id]))
 }
 
-const hasFilters = computed(
+const activeFilterCount = computed(
   () =>
-    ageFilter.value.length > 0 ||
-    ratingFilter.value.length > 0 ||
-    teamTypeFilter.value.length > 0 ||
-    genderFilter.value.length > 0
+    ageFilter.value.length +
+    ratingFilter.value.length +
+    teamTypeFilter.value.length +
+    genderFilter.value.length
 )
+const hasFilters = computed(() => activeFilterCount.value > 0)
 function resetFilters() {
   ageFilter.value = []
   ratingFilter.value = []
@@ -271,7 +272,7 @@ onBeforeUnmount(() => {
             type="button"
             class="association-teams__filter-reset"
             @click="resetFilters"
-          >Reset filter</button>
+          >Reset filters ({{ activeFilterCount }})</button>
         </div>
         <NgtViewToggle />
       </div>

@@ -158,6 +158,32 @@ export function buildUserAvatarUrl(
 }
 
 /**
+ * Convert an association logo filename/path into the public CDN location used
+ * by legacy and v2 association cards: `{cdnOrigin}/associations/logo/{guid}/{fileName}`.
+ */
+export function buildAssociationLogoUrl(
+  fileName: string | null | undefined,
+  guid?: string | null,
+  environment: ApiEnvironment = ACTIVE_API_ENV
+): string | undefined {
+  const trimmed = fileName?.trim()
+  if (!trimmed) return undefined
+  if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed
+  }
+
+  const cleaned = trimmed.replace(/^\/+/, '')
+  if (cleaned.startsWith('associations/logo/')) {
+    return `${getCdnOrigin(environment)}/${cleaned}`
+  }
+
+  const normalizedGuid = guid?.trim().replace(/^\/+|\/+$/g, '')
+  return normalizedGuid
+    ? `${getCdnOrigin(environment)}/associations/logo/${normalizedGuid}/${cleaned}`
+    : `${getCdnOrigin(environment)}/associations/logo/${cleaned}`
+}
+
+/**
  * Convert a task attachment filename/path into the public CDN location used by
  * the legacy Tasks surface: `{cdnOrigin}/user_tasks/{fileName}`.
  */

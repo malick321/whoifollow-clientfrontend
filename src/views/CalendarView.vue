@@ -102,8 +102,9 @@ async function loadRange(from: string, to: string) {
 }
 
 function onDatesSet(arg: DatesSetArg) {
-  const from = toYmd(arg.start)
-  const to = rangeEndInclusive(arg.end)
+  const from = arg.view.type === 'dayGridMonth' ? toYmd(arg.view.currentStart) : toYmd(arg.start)
+  const to =
+    arg.view.type === 'dayGridMonth' ? rangeEndInclusive(arg.view.currentEnd) : rangeEndInclusive(arg.end)
   rangeLabel.value = arg.view.title
   if (activeRange.value?.from === from && activeRange.value?.to === to) return
   activeRange.value = { from, to }
