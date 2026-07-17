@@ -18,11 +18,12 @@ const lock = useChatLockStore()
 const route = useRoute()
 const { activeConversationId } = storeToRefs(store)
 
-// Details panel is open by default (per design); it only actually renders once
-// a conversation is active (see the `v-if="activeId && showInfo"` gate below).
+// Desktop keeps the inspector available by default. Mobile opens directly into
+// the conversation and only shows Details when the user taps the info button.
 const showInfo = ref(true)
 const addTeamOpen = ref(false)
 const startChatOpen = ref(false)
+const isMobileChat = ref(false)
 
 const activeId = computed(() => activeConversationId.value)
 
@@ -45,14 +46,27 @@ async function openConversationFromQuery() {
   const id = String(route.query.conversationId ?? '')
   if (!id) return
   if (!store.conversations.length) await store.loadConversations()
+  if (isMobileChat.value) showInfo.value = false
   await store.openConversation(id)
 }
 
+function syncMobileChat() {
+  const next = typeof window !== 'undefined' && window.matchMedia('(max-width: 840px)').matches
+  if (next && !isMobileChat.value) showInfo.value = false
+  isMobileChat.value = next
+}
+
 onMounted(() => {
+  syncMobileChat()
   store.connect()
   void store.loadConversations().then(openConversationFromQuery)
   void lock.load()
   document.addEventListener('visibilitychange', onVisibility)
+  if (typeof window !== 'undefined') window.addEventListener('resize', syncMobileChat)
+})
+
+watch(activeId, () => {
+  if (isMobileChat.value) showInfo.value = false
 })
 
 watch(
@@ -63,6 +77,7 @@ watch(
 onBeforeUnmount(() => {
   store.disconnect()
   document.removeEventListener('visibilitychange', onVisibility)
+  if (typeof window !== 'undefined') window.removeEventListener('resize', syncMobileChat)
 })
 
 function backToList() {

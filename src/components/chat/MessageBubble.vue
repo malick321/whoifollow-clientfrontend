@@ -401,6 +401,7 @@ onBeforeUnmount(() => {
 
 .bubble {
   position: relative;
+  min-width: 52px;
   max-width: 100%;
   padding: 7px 11px 6px;
   border-radius: 14px;
@@ -626,7 +627,8 @@ html.dark-mode .bubble__file-chip {
   font-weight: 400;
   line-height: 1.4;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .bubble__footer {
@@ -860,8 +862,13 @@ html.dark-mode .bubble__file-chip {
 }
 
 @media (max-width: 520px) {
+  .bubble-stack {
+    max-width: min(84%, 320px);
+  }
+
   .bubble {
-    max-width: calc(100% - 44px);
+    min-width: 58px;
+    max-width: 100%;
   }
 
   .bubble__media {

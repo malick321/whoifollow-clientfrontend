@@ -207,16 +207,23 @@ const emit = defineEmits<{
     transform: none;
   }
 
+  .product-card {
+    border-radius: 10px;
+  }
+
   .product-card__media {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: auto;
+    height: 112px;
     display: grid;
     place-items: center;
     overflow: hidden;
   }
 
   .product-card__img {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
-    padding: 8px;
+    padding: 6px;
   }
 
   .product-card__img--placeholder {
@@ -224,21 +231,33 @@ const emit = defineEmits<{
   }
 
   .product-card__body {
-    padding: 12px;
+    gap: 6px;
+    padding: 10px;
   }
 
   .product-card__name {
-    font-size: 0.88rem;
+    font-size: 0.8rem;
+    line-height: 1.25;
   }
 
   .product-card__price {
-    font-size: 0.95rem;
+    font-size: 0.86rem;
   }
 
   .product-card__cart-btn {
-    min-height: 34px;
-    padding: 8px 10px;
-    font-size: 0.8rem;
+    min-height: 32px;
+    padding: 7px 8px;
+    font-size: 0.74rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .product-card__media {
+    height: 96px;
+  }
+
+  .product-card__cart-btn {
+    gap: 4px;
   }
 }
 </style>
