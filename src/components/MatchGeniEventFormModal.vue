@@ -1386,8 +1386,8 @@ function onSubmit() { void save() }
               </div>
             </div>
 
-            <!-- Director -->
-            <div class="mg-evt-form__col">
+            <!-- Director — hidden for team events (no director concept). -->
+            <div v-if="!isTeamMode" class="mg-evt-form__col">
               <h3 class="mg-evt-form__subhead">Director information</h3>
               <div class="floating-input mg-evt-form__field">
                 <input id="evt-dir-name" v-model="directorName" type="text" maxlength="120"
@@ -1742,7 +1742,7 @@ function onSubmit() { void save() }
             <div><dt>Type</dt><dd>{{ [associationName, eventTypeLabel, sportName].filter(Boolean).join(' · ') || '—' }}</dd></div>
             <div><dt>Dates</dt><dd>{{ reviewDates }}</dd></div>
             <div><dt>Timezone</dt><dd>{{ timeZoneLabel || '—' }}</dd></div>
-            <div><dt>Director</dt><dd>{{ reviewDirector }}</dd></div>
+            <div v-if="!isTeamMode"><dt>Director</dt><dd>{{ reviewDirector }}</dd></div>
             <template v-if="!isTeamMode && locationType !== 'online'">
               <div><dt>Format</dt><dd>{{ reviewFormat }}</dd></div>
               <div><dt>Time limits</dt><dd>Pool {{ poolLimit || '—' }} · Bracket {{ bracketLimit || '—' }} · Champ {{ championshipLimit || '—' }} · Slot {{ gameTimeSlot || '—' }} (min)</dd></div>
