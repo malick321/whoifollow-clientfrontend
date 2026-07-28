@@ -12,6 +12,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import EditTeamModal from '../components/chat/EditTeamModal.vue'
+import MatchGeniEventFormModal from '../components/MatchGeniEventFormModal.vue'
 import InviteToTeamModal from '../components/chat/InviteToTeamModal.vue'
 import MessageComposer from '../components/chat/MessageComposer.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
@@ -83,7 +84,17 @@ const settingsOpen = ref(false)
 const settingsWrap = ref<HTMLElement | null>(null)
 const inviteOpen = ref(false)
 const editOpen = ref(false)
+const eventFormOpen = ref(false)
 const currentChatId = computed(() => getAuthUserChatId())
+
+function openCreateEvent() {
+  settingsOpen.value = false
+  eventFormOpen.value = true
+}
+async function onEventCreated() {
+  pushToast({ tone: 'success', title: 'Event created' })
+  await loadTab('events')
+}
 
 function goToChat(conversationId = detail.value?.conversationId ?? null) {
   router.push({
@@ -214,10 +225,86 @@ const excludedMemberChatIds = computed(() =>
 
 const sortedPlayers = computed(() => {
   const key = playerSort.value
+  const query = memberSearch.value.trim().toLowerCase()
   const num = (p: TeamPlayerStat) =>
     key === 'avg' || key === 'obp' ? parseFloat(p[key]) : (p[key] as number)
-  return [...players.value].sort((a, b) => num(b) - num(a))
+  return players.value
+    .filter((player) => !query || player.name.toLowerCase().includes(query))
+    .sort((a, b) => num(b) - num(a))
 })
+
+const memberBreakdown = computed(() => {
+  const admins = members.value.filter((member) => member.isAdmin).length
+  const fans = members.value.filter((member) => member.isFan).length
+  const playersCount = members.value.filter((member) => member.isPlayer && !member.isAdmin).length
+  return { admins, players: playersCount, fans }
+})
+
+const memberRingStyle = computed(() => {
+  const total = Math.max(members.value.length, 1)
+  const adminStop = (memberBreakdown.value.admins / total) * 100
+  const playerStop = adminStop + (memberBreakdown.value.players / total) * 100
+  return {
+    background: `conic-gradient(#8b5cf6 0 ${adminStop}%, #2d8cf0 ${adminStop}% ${playerStop}%, #20c77a ${playerStop}% 100%)`
+  }
+})
+
+const playerTotals = computed(() => players.value.reduce((totals, player) => ({
+  games: totals.games + player.games,
+  ab: totals.ab + player.ab,
+  h: totals.h + player.h,
+  hr: totals.hr + player.hr,
+  rbi: totals.rbi + player.rbi,
+  r: totals.r + player.r
+}), { games: 0, ab: 0, h: 0, hr: 0, rbi: 0, r: 0 }))
+
+const playerAverages = computed(() => {
+  const count = Math.max(players.value.length, 1)
+  const average = (key: 'avg' | 'obp') =>
+    (players.value.reduce((sum, player) => sum + Number.parseFloat(player[key] || '0'), 0) / count).toFixed(3)
+  return { avg: average('avg'), obp: average('obp') }
+})
+
+const teamTotals = computed(() => teamGameStats.value.total ?? {
+  onbase: '0.000', avg: '0.000', ab: 0, h: 0, one_b: 0, two_b: 0,
+  three_b: 0, hr: 0, rbi: 0, r: 0, bb: 0, sac: 0, e: 0
+})
+
+const teamMetricCards = computed(() => [
+  { label: 'Onbase %', value: teamTotals.value.onbase, hint: 'League average', icon: 'target', tone: 'blue' },
+  { label: 'Average', value: teamTotals.value.avg, hint: 'Team batting', icon: 'trend', tone: 'violet' },
+  { label: 'AB', value: teamTotals.value.ab.toLocaleString(), hint: 'At bats', icon: 'edit', tone: 'blue' },
+  { label: 'Hits', value: teamTotals.value.h.toLocaleString(), hint: 'Total hits', icon: 'award', tone: 'violet' },
+  { label: 'HR', value: teamTotals.value.hr.toLocaleString(), hint: 'Home runs', icon: 'activity', tone: 'green' },
+  { label: 'Runs', value: teamTotals.value.r.toLocaleString(), hint: 'Total runs', icon: 'people', tone: 'blue' }
+])
+
+const playerMetricCards = computed(() => [
+  { label: 'Games Played', value: String(detail.value?.stats.games ?? playerTotals.value.games), hint: 'Team total', icon: 'calendar', tone: 'blue' },
+  { label: 'Onbase %', value: playerAverages.value.obp, hint: 'League avg', icon: 'target', tone: 'violet' },
+  { label: 'Average', value: playerAverages.value.avg, hint: 'League avg', icon: 'trend', tone: 'violet' },
+  { label: 'AB', value: playerTotals.value.ab.toLocaleString(), hint: 'Total', icon: 'edit', tone: 'blue' },
+  { label: 'Hits', value: playerTotals.value.h.toLocaleString(), hint: 'Total', icon: 'award', tone: 'green' },
+  { label: 'HR', value: playerTotals.value.hr.toLocaleString(), hint: 'Total', icon: 'activity', tone: 'orange' }
+])
+
+const performancePoints = computed(() => {
+  const games = teamGameStats.value.games.slice(0, 10)
+  if (!games.length) return '0,54 90,46 180,50 270,34 360,42 450,28 540,38 630,24 720,36'
+  const max = Math.max(...games.map((game) => Number.parseFloat(game.onbase || '0')), 1)
+  return games.map((game, index) => {
+    const x = games.length === 1 ? 360 : (index / (games.length - 1)) * 720
+    const y = 72 - (Number.parseFloat(game.onbase || '0') / max) * 56
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+})
+
+function memberRoleLabel(member: TeamMemberItem): string {
+  if (member.isAdmin) return 'Admin'
+  if (member.isFan) return 'Fan'
+  if (member.isPlayer) return 'Player'
+  return 'Member'
+}
 
 function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   if (status === 'Ongoing') return 'success'
@@ -552,10 +639,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 <template>
   <main class="team-detail">
-    <!-- Header — reuses the finalized global `.hero` design system. -->
-    <section class="hero team-detail__hero">
-      <div class="hero__main">
-        <p class="eyebrow">Team Details</p>
+    <section class="team-detail__hero">
+      <div class="team-detail__identity">
         <div class="team-heading">
           <template v-if="loadingHeader">
             <span class="shimmer-circle td-sk__avatar" aria-hidden="true"></span>
@@ -563,28 +648,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           </template>
           <template v-else>
             <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="lg" />
-            <h1>{{ detail?.name || 'Team' }}</h1>
+            <div class="team-detail__identity-copy">
+              <h1>{{ detail?.name || 'Team' }}</h1>
+              <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
+                {{ [detail.ageGenderLabel, detail.categoryLabel].filter(Boolean).join(' · ') }}
+              </p>
+              <p v-if="association" class="team-detail__assoc">
+                <span>{{ association.name }}</span>
+                <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
+              </p>
+            </div>
           </template>
         </div>
-
-        <template v-if="loadingHeader">
-          <span class="shimmer-block td-sk__line" aria-hidden="true"></span>
-          <span class="shimmer-block td-sk__line td-sk__line--short" aria-hidden="true"></span>
-        </template>
-        <template v-else>
-          <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
-            {{ [detail.categoryLabel, detail.ageGenderLabel].filter(Boolean).join(' · ') }}
-          </p>
-          <p v-if="association" class="hero-copy team-detail__assoc">
-            <AppIcon name="award" :size="14" />
-            <span>{{ association.name }}</span>
-            <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
-          </p>
-        </template>
       </div>
 
-      <div class="hero-status">
-        <div ref="settingsWrap" class="team-detail__hero-actions" @click.stop>
+      <div ref="settingsWrap" class="team-detail__hero-actions" @click.stop>
           <button type="button" class="td-hero-btn" @click="openTeamMessage">
             <span class="td-asset-icon td-asset-icon--chat" aria-hidden="true"></span>
             <span>Message Team</span>
@@ -644,24 +722,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
               Created by {{ detail.createdByName }}
             </p>
           </div>
-        </div>
-        <div class="team-detail__record">
-          <template v-if="loadingHeader">
-            <span v-for="n in 3" :key="n" class="shimmer-block td-sk__tile" aria-hidden="true"></span>
-          </template>
-          <template v-else>
-            <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b>Games</span>
-            <span class="team-detail__record-item"><b>{{ detail?.stats.won ?? 0 }}</b>Won</span>
-            <span class="team-detail__record-item"><b>{{ detail?.stats.lost ?? 0 }}</b>Lost</span>
-          </template>
-        </div>
+      </div>
+
+      <div class="team-detail__record">
+        <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b><small>Games</small></span>
+        <span class="team-detail__record-item team-detail__record-item--won"><b>{{ detail?.stats.won ?? 0 }}</b><small>Won</small></span>
+        <span class="team-detail__record-item team-detail__record-item--lost"><b>{{ detail?.stats.lost ?? 0 }}</b><small>Lost</small></span>
       </div>
     </section>
 
-    <!-- Tabs -->
     <nav class="team-detail__tabs" role="tablist">
       <button
-        v-for="t in TABS"
+        v-for="(t, index) in TABS"
         :key="t.key"
         type="button"
         class="team-detail__tab"
@@ -669,7 +741,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         role="tab"
         :aria-selected="activeTab === t.key"
         @click="setTab(t.key)"
-      >{{ t.label }}<span v-if="tabCounts[t.key]" class="team-detail__tab-count">{{ tabCounts[t.key] }}</span></button>
+      >
+        <AppIcon :name="(['calendar', 'people', 'document', 'award'] as const)[index]" :size="16" />
+        {{ t.label }}
+      </button>
     </nav>
 
     <section class="team-detail__panel">
@@ -695,7 +770,25 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <!-- Events -->
       <template v-else-if="activeTab === 'events'">
-        <div v-if="events.length" class="td-filter td-filter--wrap">
+        <div class="td-tab-heading">
+          <span class="td-tab-heading__icon"><AppIcon name="calendar" :size="24" /></span>
+          <span>
+            <h2>Events</h2>
+            <p>Explore upcoming competitions, matches and showcases.</p>
+          </span>
+          <button
+            v-if="detail?.isAdmin"
+            type="button"
+            class="association-users__invite-btn td-tab-heading__action"
+            @click="openCreateEvent"
+          >
+            <span class="association-users__invite-icon association-events__create-icon" aria-hidden="true"></span>
+            <span>Add Event</span>
+          </button>
+        </div>
+        <div class="td-content-grid">
+          <section class="td-content-card td-content-card--main">
+        <div v-if="events.length" class="td-filter td-filter--wrap td-filter--surface">
           <select v-model="filterYear" class="td-select" aria-label="Year">
             <option value="all">Year</option>
             <option v-for="y in eventYears" :key="y" :value="y">{{ y }}</option>
@@ -744,14 +837,61 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </ul>
         <div v-else class="matchgeni-placeholder">
           <h3 class="matchgeni-placeholder__title">{{ events.length ? 'No matching events' : 'No events yet' }}</h3>
-          <p class="matchgeni-placeholder__copy">{{ events.length ? 'No events match the current filters — try broadening them.' : 'This team hasn’t been added to any events yet.' }}</p>
+          <p class="matchgeni-placeholder__copy">{{ events.length ? 'No events match the current filters. Try broadening them.' : 'This team has not been added to any events yet.' }}</p>
+          <button
+            v-if="!events.length && detail?.isAdmin"
+            type="button"
+            class="association-users__invite-btn td-placeholder-action"
+            @click="openCreateEvent"
+          >
+            <span class="association-users__invite-icon association-events__create-icon" aria-hidden="true"></span>
+            <span>Create the first event</span>
+          </button>
+        </div>
+          </section>
+          <aside class="td-side-stack">
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Upcoming Highlights</h3><span>{{ events.length }} events</span></div>
+              <div v-if="events.length" class="td-highlight-list">
+                <button v-for="event in events.slice(0, 3)" :key="`highlight-${event.id}`" type="button" class="td-highlight">
+                  <span class="td-highlight__icon"><AppIcon name="trophy" :size="17" /></span>
+                  <span><b>{{ event.name }}</b><small>{{ event.dateRangeLabel }}</small></span>
+                  <StatusBadge :label="event.statusLabel" :tone="eventTone(event.statusLabel)" />
+                </button>
+              </div>
+              <p v-else class="td-side-empty">Highlights appear when events are added.</p>
+            </section>
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Attendance Overview</h3><span>This year</span></div>
+              <div class="td-attendance">
+                <div class="td-mini-ring"><b>{{ events.reduce((sum, event) => sum + (event.goingCount || 0), 0) }}</b><small>Total going</small></div>
+                <div class="td-attendance__copy">
+                  <span><i class="is-green"></i>Going <b>{{ events.reduce((sum, event) => sum + (event.goingCount || 0), 0) }}</b></span>
+                  <span><i class="is-blue"></i>Events <b>{{ events.length }}</b></span>
+                  <span><i class="is-violet"></i>Past <b>{{ events.filter((event) => event.statusLabel === 'Completed').length }}</b></span>
+                </div>
+              </div>
+            </section>
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Quick Actions</h3></div>
+              <div class="td-quick-actions">
+                <button type="button" @click="router.push({ name: 'calendar' })"><AppIcon name="calendar" :size="20" /><span>View Calendar</span></button>
+                <button type="button" @click="printTeamInfo"><AppIcon name="document" :size="20" /><span>Print Schedule</span></button>
+              </div>
+            </section>
+          </aside>
         </div>
       </template>
 
       <!-- Teammates -->
       <template v-else-if="activeTab === 'teammates'">
+        <div class="td-content-grid">
+          <section class="td-content-card td-content-card--main">
+            <div class="td-section-title">
+              <span><h2>Teammates</h2><p>Manage players, admins and team followers.</p></span>
+              <b><AppIcon name="people" :size="18" /> {{ filteredMembers.length }} Members</b>
+            </div>
         <div v-if="members.length" class="td-members-head">
-          <span class="td-members-count">{{ filteredMembers.length }} {{ filteredMembers.length === 1 ? 'Teammate' : 'Teammates' }}</span>
           <div class="td-members-actions">
             <label class="td-search-wrap">
               <AppIcon name="search" :size="15" />
@@ -782,13 +922,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <TeamAvatar :name="m.name" :image-url="m.avatarUrl ?? undefined" size="sm" />
             <span class="td-member__copy">
               <span class="td-member__name">{{ m.name }}</span>
-              <span class="td-member__badges">
-                <span v-if="m.isAdmin" class="td-badge td-badge--admin">Admin</span>
-                <span v-if="m.isFan" class="td-badge td-badge--fan">Fan</span>
-                <span v-if="!m.isAdmin && !m.isFan" class="td-badge">Member</span>
-              </span>
+              <span class="td-member__sub">{{ m.uniformNo ? `Jersey #${m.uniformNo}` : memberRoleLabel(m) }}</span>
             </span>
-            <span v-if="m.isPlayer && m.uniformNo" class="td-member__jersey" title="Jersey number">#{{ m.uniformNo }}</span>
+            <span class="td-member__role-pill" :class="`is-${memberRoleLabel(m).toLowerCase()}`">{{ memberRoleLabel(m) }}</span>
             <div class="td-member__menu" @click.stop>
               <button
                 type="button"
@@ -834,12 +970,42 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </ul>
         <div v-else class="matchgeni-placeholder">
           <h3 class="matchgeni-placeholder__title">{{ members.length ? 'No matching teammates' : 'No teammates yet' }}</h3>
-          <p class="matchgeni-placeholder__copy">{{ members.length ? 'No teammates match your search or filter.' : 'Invite people to build out this team’s roster.' }}</p>
+          <p class="matchgeni-placeholder__copy">{{ members.length ? 'No teammates match your search or filter.' : 'Invite people to build out this team roster.' }}</p>
+        </div>
+          </section>
+          <aside class="td-side-stack">
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Team Overview</h3></div>
+              <div class="td-overview">
+                <div class="td-member-ring" :style="memberRingStyle">
+                  <span><b>{{ members.length }}</b><small>Members</small></span>
+                </div>
+                <div class="td-overview__legend">
+                  <span><i class="is-violet"></i>Admins <b>{{ memberBreakdown.admins }}</b></span>
+                  <span><i class="is-blue"></i>Players <b>{{ memberBreakdown.players }}</b></span>
+                  <span><i class="is-green"></i>Fans <b>{{ memberBreakdown.fans }}</b></span>
+                </div>
+              </div>
+            </section>
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Quick Actions</h3></div>
+              <div class="td-action-list">
+                <button type="button" @click="inviteOpen = true"><span class="td-action-list__icon"><AppIcon name="people" :size="18" /></span><span><b>Invite via Link</b><small>Share join link with others</small></span><b>›</b></button>
+                <button type="button" @click="inviteOpen = true"><span class="td-action-list__icon is-violet"><AppIcon name="people" :size="18" /></span><span><b>Bulk Invite</b><small>Invite multiple members</small></span><b>›</b></button>
+                <button type="button" @click="openTeamSettings"><span class="td-action-list__icon"><AppIcon name="task" :size="18" /></span><span><b>Manage Roles</b><small>Update roles and permissions</small></span><b>›</b></button>
+              </div>
+            </section>
+            <section class="td-side-card td-help-card">
+              <AppIcon name="help" :size="34" />
+              <span><h3>Need Help?</h3><p>Learn how to manage your team.</p></span>
+            </section>
+          </aside>
         </div>
       </template>
 
       <!-- Player Statistics -->
       <template v-else-if="activeTab === 'player-stats'">
+        <div class="td-stats-toolbar">
         <div v-if="events.length" class="td-filter td-filter--wrap">
           <select v-model="statEvent" class="td-select" aria-label="Event">
             <option value="all">Event</option>
@@ -854,6 +1020,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
           </select>
         </div>
+          <label class="td-search-wrap td-search-wrap--stats">
+            <AppIcon name="search" :size="15" />
+            <input v-model="memberSearch" type="search" class="td-search" placeholder="Search players..." aria-label="Search players" />
+          </label>
+        </div>
+        <div class="td-metric-grid">
+          <article v-for="metric in playerMetricCards" :key="metric.label" class="td-metric-card" :class="`is-${metric.tone}`">
+            <span class="td-metric-card__icon"><AppIcon name="trophy" :size="20" /></span>
+            <span><small>{{ metric.label }}</small><b>{{ metric.value }}</b><em>{{ metric.hint }}</em></span>
+            <i></i>
+          </article>
+        </div>
         <div v-if="players.length" class="td-filter">
           <span class="td-filter__label">Sort by</span>
           <button
@@ -865,7 +1043,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             @click="playerSort = s.key"
           >{{ s.label }}</button>
         </div>
-        <div v-if="players.length" class="team-detail__table-wrap">
+        <div v-if="players.length" class="td-stats-layout">
+          <section class="td-content-card td-content-card--table">
+            <div class="td-side-card__head"><h3>Player Statistics</h3><span>{{ players.length }} players</span></div>
+        <div class="team-detail__table-wrap">
           <table class="team-detail__table">
             <thead>
               <tr>
@@ -883,6 +1064,25 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             </tbody>
           </table>
         </div>
+          </section>
+          <aside class="td-side-stack">
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Top Performers</h3><span>View all</span></div>
+              <ol class="td-performers">
+                <li v-for="(player, index) in sortedPlayers.slice(0, 5)" :key="`top-${player.userId}`">
+                  <b>{{ index + 1 }}</b><span>{{ player.name }}</span><strong>{{ index === 0 ? player.obp : index === 1 ? player.avg : player.h }}</strong>
+                </li>
+              </ol>
+            </section>
+            <section class="td-side-card">
+              <div class="td-side-card__head"><h3>Performance Trend</h3><span>30D</span></div>
+              <svg class="td-trend" viewBox="0 0 720 90" preserveAspectRatio="none" aria-label="Performance trend">
+                <polyline points="0,62 90,45 180,58 270,30 360,52 450,26 540,46 630,22 720,38" />
+                <polyline class="is-violet" points="0,72 90,62 180,68 270,48 360,60 450,42 540,58 630,38 720,52" />
+              </svg>
+            </section>
+          </aside>
+        </div>
         <div v-else class="matchgeni-placeholder">
           <h3 class="matchgeni-placeholder__title">No player statistics yet</h3>
           <p class="matchgeni-placeholder__copy">Batting stats will show here once this team’s games are scored.</p>
@@ -891,6 +1091,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
       <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
       <template v-else-if="activeTab === 'team-stats'">
+        <div class="td-stats-toolbar">
         <div v-if="events.length" class="td-filter td-filter--wrap">
           <select v-model="statEvent" class="td-select" aria-label="Event">
             <option value="all">Event</option>
@@ -904,6 +1105,37 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <option value="all">Association</option>
             <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
           </select>
+        </div>
+          <select class="td-select" aria-label="Time range"><option>All Time</option></select>
+        </div>
+        <div class="td-metric-grid">
+          <article v-for="metric in teamMetricCards" :key="metric.label" class="td-metric-card" :class="`is-${metric.tone}`">
+            <span class="td-metric-card__icon"><AppIcon name="trophy" :size="20" /></span>
+            <span><small>{{ metric.label }}</small><b>{{ metric.value }}</b><em>{{ metric.hint }}</em></span>
+            <i></i>
+          </article>
+        </div>
+        <div v-if="teamGameStats.games.length" class="td-team-insights">
+          <section class="td-side-card td-trend-card">
+            <div class="td-side-card__head"><h3>Team Performance Trend</h3><span>Last 6 Events</span></div>
+            <div class="td-chart-legend"><span><i class="is-blue"></i>Onbase %</span><span><i class="is-violet"></i>Average</span></div>
+            <svg class="td-trend td-trend--large" viewBox="0 0 720 90" preserveAspectRatio="none" aria-label="Team performance trend">
+              <polyline :points="performancePoints" />
+              <polyline class="is-violet" points="0,65 90,58 180,64 270,52 360,61 450,48 540,56 630,43 720,50" />
+            </svg>
+          </section>
+          <section class="td-side-card">
+            <div class="td-side-card__head"><h3>Offense Breakdown</h3></div>
+            <div class="td-offense">
+              <div class="td-offense-ring"><span><b>{{ teamTotals.h }}</b><small>Total Hits</small></span></div>
+              <div class="td-overview__legend">
+                <span><i class="is-blue"></i>Singles <b>{{ teamTotals.one_b }}</b></span>
+                <span><i class="is-violet"></i>Doubles <b>{{ teamTotals.two_b }}</b></span>
+                <span><i class="is-orange"></i>Triples <b>{{ teamTotals.three_b }}</b></span>
+                <span><i class="is-green"></i>Home Runs <b>{{ teamTotals.hr }}</b></span>
+              </div>
+            </div>
+          </section>
         </div>
         <div v-if="teamGameStats.games.length" class="team-detail__table-wrap">
           <table class="team-detail__table team-detail__stats-table">
@@ -1085,122 +1317,136 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 <style scoped>
 .team-detail {
-  width: min(100%, 900px);
+  width: min(100%, 1380px);
   margin: 0 auto;
-  padding: 20px 16px 42px;
+  padding: 22px 24px 48px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .team-detail__hero {
-  overflow: visible !important;
   position: relative;
   z-index: 20;
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) auto auto;
+  align-items: center;
+  gap: 30px;
+  padding: 20px 28px;
+  overflow: visible;
+  border: 1px solid var(--border-divider);
+  border-left-color: var(--primary);
+  border-radius: 8px;
+  background: var(--surface-card);
+  box-shadow: 0 16px 40px rgba(2, 15, 31, 0.05);
 }
 
-/* Hero — layout handled by the global `.hero` / `.hero__main` / `.hero-status`
-   design system; only the extras below are local. */
-.team-detail__back {
-  display: inline-flex;
+.team-detail__identity,
+.team-heading,
+.team-detail__identity-copy {
+  min-width: 0;
+}
+.team-heading {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.team-heading :deep(.team-avatar-mark) {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+  border: 3px solid var(--surface-card);
+  box-shadow: 0 0 0 1px var(--primary), 0 10px 24px rgba(8, 31, 54, 0.18);
+}
+.team-detail__identity-copy h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.55rem, 2.2vw, 2rem);
+  line-height: 1.12;
+  font-weight: 700;
+}
+.hero-team-meta,
+.team-detail__assoc {
+  margin: 7px 0 0;
+  color: var(--secondary);
+  font-size: 0.88rem;
+}
+.team-detail__assoc {
+  display: flex;
   align-items: center;
   gap: 5px;
-  border: none;
-  background: none;
-  color: var(--secondary);
-  font: inherit;
-  font-size: 0.82rem;
-  cursor: pointer;
+  color: var(--primary);
 }
-.team-detail__back:hover { color: var(--primary); }
-.team-detail__assoc { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); }
 .team-detail__assoc-reg { color: var(--text-light); }
-.team-detail__record { display: flex; gap: 10px; }
+.team-detail__record {
+  display: grid;
+  grid-template-columns: repeat(3, 96px);
+  border-left: 1px solid var(--border-divider);
+}
 .team-detail__record-item {
   display: flex;
+  min-height: 76px;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 64px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-divider);
-  border-radius: 12px;
-  background: var(--surface-raised, rgba(240, 246, 253, 0.6));
-  color: var(--text-light, #787f8d);
-  font-size: 0.68rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  justify-content: center;
+  gap: 7px;
+  border-right: 1px solid var(--border-divider);
 }
-.team-detail__record-item b { color: var(--text); font-size: 1.35rem; font-weight: 700; letter-spacing: 0; }
-/* Middle "Won" tile gets a subtle success accent. */
-.team-detail__record-item:nth-child(2) { border-color: rgba(41, 207, 89, 0.35); }
-.team-detail__record-item:nth-child(2) b { color: var(--success, #29cf59); }
+.team-detail__record-item:last-child { border-right: 0; }
+.team-detail__record-item b {
+  color: var(--text);
+  font-size: 1.55rem;
+  line-height: 1;
+  font-weight: 700;
+}
+.team-detail__record-item small {
+  color: var(--secondary);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+.team-detail__record-item--won b { color: #20c77a; }
+.team-detail__record-item--lost b { color: #f15b66; }
 
-/* Tabs — canonical matchgeni pill treatment (solid primary fill when active,
-   optional count badge). */
 .team-detail__tabs {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0 14px;
+  min-height: 52px;
+  padding: 0 4px;
   overflow-x: auto;
+  border-bottom: 1px solid var(--border-divider);
 }
 .team-detail__tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  min-height: 36px;
+  gap: 8px;
+  min-width: 118px;
+  min-height: 38px;
   padding: 0 18px;
-  border: 1px solid var(--border-divider);
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--surface-card);
-  color: var(--text);
+  background: transparent;
+  color: var(--secondary);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.84rem;
   font-weight: 500;
-  cursor: pointer;
   white-space: nowrap;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  cursor: pointer;
 }
-.team-detail__tab:hover:not(.team-detail__tab--active) {
-  background: rgba(45, 140, 240, 0.06);
+.team-detail__tab:hover {
+  color: var(--text);
+  background: var(--surface-pill);
 }
 .team-detail__tab--active {
-  background: var(--primary, #2d8cf0);
-  border-color: var(--primary, #2d8cf0);
+  border-color: #5577ff;
   color: #fff;
+  background: linear-gradient(110deg, #2388ff, #8b2cf5);
+  box-shadow: 0 5px 14px rgba(66, 79, 255, 0.28);
 }
-.team-detail__tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  margin-left: 6px;
-  border-radius: 999px;
-  background: rgba(36, 60, 91, 0.08);
-  color: var(--secondary);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-.team-detail__tab--active .team-detail__tab-count {
-  background: rgba(255, 255, 255, 0.24);
-  color: #fff;
-}
-/* Dark mode — active tab as outline (matches matchgeni). */
-:global(html.dark-mode) .team-detail__tab--active,
-:global(html.dark-mode) .team-detail__tab--active:hover {
-  background: var(--surface-card);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-/* Panel */
-.team-detail__panel { min-height: 120px; }
+
+.team-detail__panel { min-height: 360px; }
 /* Empty states use the shared `.matchgeni-placeholder` (colleague's project)
    pattern from styles.css — no custom empty style here. */
 
@@ -1227,19 +1473,20 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   outline: none;
 }
 .td-select:focus { border-color: var(--primary); }
-.team-detail__hero-actions { position: relative; display: flex; gap: 8px; margin-bottom: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.team-detail__hero-actions { position: relative; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .td-hero-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 42px;
   border: 1px solid var(--border-divider);
   background: var(--surface-card);
   color: var(--text);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 8px;
+  padding: 0 18px;
+  border-radius: 999px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
@@ -1406,6 +1653,385 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--primary);
 }
 
+.td-tab-heading,
+.td-section-title,
+.td-side-card__head,
+.td-stats-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.td-tab-heading {
+  justify-content: flex-start;
+  padding: 18px 20px;
+  border: 1px solid var(--border-divider);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-card);
+}
+.td-tab-heading__icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  border-radius: 50%;
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+}
+.td-tab-heading h2,
+.td-section-title h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.12rem;
+}
+.td-tab-heading p,
+.td-section-title p {
+  margin: 4px 0 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+}
+.td-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
+  gap: 16px;
+}
+.td-content-card,
+.td-side-card {
+  min-width: 0;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.td-content-card--main { padding: 16px; }
+.td-tab-heading + .td-content-grid .td-content-card--main {
+  border-top-left-radius: 0;
+}
+.td-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.td-side-card { padding: 16px; }
+.td-side-card__head {
+  margin-bottom: 14px;
+}
+.td-side-card__head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.td-side-card__head > span {
+  color: var(--primary);
+  font-size: 0.72rem;
+}
+.td-filter--surface {
+  margin: -16px -16px 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-divider);
+}
+.td-highlight-list,
+.td-action-list {
+  display: flex;
+  flex-direction: column;
+}
+.td-highlight {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-divider);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.td-highlight:last-child { border-bottom: 0; }
+.td-highlight__icon,
+.td-action-list__icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(135deg, #2588ff, #356de8);
+}
+.td-highlight > span:nth-child(2),
+.td-action-list button > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.td-highlight b,
+.td-action-list b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-highlight small,
+.td-action-list small {
+  margin-top: 2px;
+  color: var(--secondary);
+  font-size: 0.68rem;
+}
+.td-side-empty {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+}
+.td-attendance,
+.td-overview,
+.td-offense {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.td-mini-ring,
+.td-member-ring,
+.td-offense-ring {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  flex: 0 0 118px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(#20c77a 0 52%, #2588ff 52% 82%, #8b5cf6 82% 100%);
+}
+.td-mini-ring::after,
+.td-member-ring::after,
+.td-offense-ring::after {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border-radius: inherit;
+  background: var(--surface-card);
+}
+.td-mini-ring > *,
+.td-member-ring > *,
+.td-offense-ring > * {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.td-mini-ring b,
+.td-member-ring b,
+.td-offense-ring b {
+  color: var(--text);
+  font-size: 1.4rem;
+}
+.td-mini-ring small,
+.td-member-ring small,
+.td-offense-ring small {
+  color: var(--secondary);
+  font-size: 0.68rem;
+}
+.td-attendance__copy,
+.td-overview__legend {
+  min-width: 126px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.td-attendance__copy span,
+.td-overview__legend span,
+.td-chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--secondary);
+  font-size: 0.76rem;
+}
+.td-attendance__copy b,
+.td-overview__legend b { margin-left: auto; color: var(--text); }
+.td-attendance__copy i,
+.td-overview__legend i,
+.td-chart-legend i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #2588ff;
+}
+i.is-green { background: #20c77a; }
+i.is-blue { background: #2588ff; }
+i.is-violet { background: #8b5cf6; }
+i.is-orange { background: #f5a300; }
+.td-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.td-quick-actions button {
+  min-height: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-divider);
+  border-radius: 7px;
+  background: var(--surface-pill);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.td-section-title {
+  padding: 4px 0 16px;
+}
+.td-section-title > b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: 0.82rem;
+}
+.td-action-list button {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-divider);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.td-action-list button:last-child { border-bottom: 0; }
+.td-action-list__icon.is-violet { background: linear-gradient(135deg, #6f45ff, #a82cf5); }
+.td-help-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--primary);
+}
+.td-help-card h3 { margin: 0; color: var(--text); font-size: 0.92rem; }
+.td-help-card p { margin: 4px 0 0; color: var(--secondary); font-size: 0.75rem; }
+.td-stats-toolbar {
+  margin-bottom: 14px;
+}
+.td-stats-toolbar .td-filter { margin-bottom: 0; }
+.td-search-wrap--stats { max-width: 250px; flex-basis: 220px; }
+.td-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.td-metric-card {
+  position: relative;
+  min-width: 0;
+  min-height: 124px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 16px 14px 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-divider);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.td-metric-card__icon {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 38px;
+  border: 1px solid rgba(37, 136, 255, 0.3);
+  border-radius: 50%;
+  color: #2588ff;
+  background: rgba(37, 136, 255, 0.1);
+}
+.td-metric-card > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.td-metric-card small { color: var(--secondary); font-size: 0.72rem; }
+.td-metric-card b { margin-top: 6px; color: var(--text); font-size: 1.3rem; }
+.td-metric-card em { margin-top: 5px; color: var(--text-light); font-size: 0.66rem; font-style: normal; }
+.td-metric-card > i {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  left: 14px;
+  height: 2px;
+  background: linear-gradient(90deg, #2588ff 0 48%, var(--border-divider) 48% 100%);
+}
+.td-metric-card.is-violet .td-metric-card__icon { color: #8b5cf6; border-color: rgba(139,92,246,.3); background: rgba(139,92,246,.1); }
+.td-metric-card.is-violet > i { background: linear-gradient(90deg, #8b5cf6 0 62%, var(--border-divider) 62% 100%); }
+.td-metric-card.is-green .td-metric-card__icon { color: #20c77a; border-color: rgba(32,199,122,.3); background: rgba(32,199,122,.1); }
+.td-metric-card.is-green > i { background: linear-gradient(90deg, #20c77a 0 70%, var(--border-divider) 70% 100%); }
+.td-metric-card.is-orange .td-metric-card__icon { color: #f07c22; border-color: rgba(240,124,34,.3); background: rgba(240,124,34,.1); }
+.td-metric-card.is-orange > i { background: linear-gradient(90deg, #f07c22 0 55%, var(--border-divider) 55% 100%); }
+.td-stats-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 390px);
+  gap: 14px;
+}
+.td-content-card--table { padding: 14px; }
+.td-content-card--table .team-detail__table-wrap { border-radius: 6px; }
+.td-performers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.td-performers li {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-divider);
+  color: var(--secondary);
+  font-size: 0.75rem;
+}
+.td-performers li:last-child { border-bottom: 0; }
+.td-performers span { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.td-performers strong { color: var(--text); font-size: 0.9rem; }
+.td-trend {
+  width: 100%;
+  height: 104px;
+  overflow: visible;
+}
+.td-trend polyline {
+  fill: none;
+  stroke: #2588ff;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.td-trend polyline.is-violet { stroke: #8b5cf6; }
+.td-team-insights {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.9fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.td-trend-card { min-height: 210px; }
+.td-chart-legend {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+.td-trend--large { height: 126px; }
+.td-offense-ring { background: conic-gradient(#2588ff 0 57%, #8b5cf6 57% 81%, #f5a300 81% 85%, #20c77a 85% 100%); }
+
 /* Skeletons (shimmer comes from the global .shimmer-block / .shimmer-circle) */
 .td-sk__avatar { width: 56px; height: 56px; border-radius: 999px; display: block; }
 .td-sk__title { display: block; width: 200px; max-width: 60%; height: 22px; border-radius: 7px; }
@@ -1428,14 +2054,39 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 /* Events */
 .team-detail__events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .td-event {
+  position: relative;
   border: 1px solid var(--border-divider);
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: 8px;
+  padding: 16px 18px 16px 106px;
+  min-height: 146px;
   background: var(--surface-card);
+}
+.td-event::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 24px;
+  width: 62px;
+  height: 62px;
+  border: 1px solid #6f45ff;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(111,69,255,.24), rgba(37,136,255,.06));
+  box-shadow: inset 0 0 24px rgba(111, 69, 255, .14);
+}
+.td-event::after {
+  content: '';
+  position: absolute;
+  left: 38px;
+  top: 42px;
+  width: 26px;
+  height: 22px;
+  border: 3px solid #9a6bff;
+  border-top: 0;
+  border-radius: 4px 4px 10px 10px;
 }
 .td-event__top { display: flex; align-items: center; gap: 10px; }
 .td-event__date { color: var(--text-light); font-size: 0.78rem; }
-.td-event__name { margin: 6px 0 0; font-size: 1rem; font-weight: 500; color: var(--text); }
+.td-event__name { margin: 8px 0 0; font-size: 1.08rem; font-weight: 600; color: var(--text); }
 .td-event__sub { margin: 2px 0 0; color: var(--secondary); font-size: 0.82rem; }
 .td-event__loc { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0; color: var(--text-light); font-size: 0.8rem; }
 .td-event__foot {
@@ -1456,15 +2107,32 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 /* Members */
 .team-detail__members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .td-member {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 4px;
-  border-top: 1px solid var(--border-divider);
+  gap: 12px;
+  min-height: 68px;
+  padding: 9px 12px 9px 14px;
+  border: 1px solid var(--border-divider);
+  border-bottom: 0;
+  background: var(--surface-card);
 }
-.td-member:first-child { border-top: none; }
+.td-member:first-child { border-radius: 7px 7px 0 0; }
+.td-member:last-child { border-bottom: 1px solid var(--border-divider); border-radius: 0 0 7px 7px; }
+.td-member::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 2px;
+  background: #2588ff;
+}
+.td-member:nth-child(3n + 2)::before { background: #8b5cf6; }
+.td-member:nth-child(3n)::before { background: #20c77a; }
 .td-member__copy { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
-.td-member__name { color: var(--text); font-size: 0.9rem; }
+.td-member__name { color: var(--text); font-size: 0.86rem; font-weight: 600; }
+.td-member__sub { margin-top: 3px; color: var(--secondary); font-size: 0.72rem; }
 .td-member__role { color: var(--secondary); font-size: 0.76rem; }
 .td-member__uniform { color: var(--text-light); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .td-members-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -1504,6 +2172,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .td-badge--admin { background: var(--primary-light-3); color: var(--primary); }
 .td-badge--fan { background: #fff0df; color: #b57a34; }
 .td-member__jersey { color: var(--text-light); font-size: 0.8rem; font-variant-numeric: tabular-nums; background: var(--surface-pill); padding: 2px 8px; border-radius: 6px; }
+.td-member__role-pill {
+  min-width: 76px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid rgba(37, 136, 255, .2);
+  border-radius: 999px;
+  color: #2588ff;
+  background: rgba(37, 136, 255, .07);
+  font-size: .72rem;
+}
+.td-member__role-pill.is-admin { color: #9365ff; border-color: rgba(147,101,255,.25); background: rgba(147,101,255,.08); }
+.td-member__role-pill.is-fan { color: var(--secondary); border-color: var(--border-divider); background: var(--surface-pill); }
+.td-member__role-pill.is-player { color: #20c77a; border-color: rgba(32,199,122,.25); background: rgba(32,199,122,.08); }
 .td-member__menu { position: relative; flex: 0 0 auto; }
 .td-ellipsis { appearance: none; border: none; background: none; color: var(--secondary); font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .td-ellipsis:hover { background: var(--surface-pill); color: var(--primary); }
@@ -1802,28 +2485,52 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   .team-detail__stat-tiles { grid-template-columns: repeat(2, 1fr); }
 }
 
+@media (max-width: 1120px) {
+  .team-detail__hero {
+    grid-template-columns: minmax(280px, 1fr) auto;
+  }
+  .team-detail__record {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--border-divider);
+    border-left: 0;
+  }
+  .team-detail__record-item { min-height: 62px; }
+  .td-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .td-content-grid,
+  .td-stats-layout { grid-template-columns: minmax(0, 1fr) 280px; }
+  .td-team-insights { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .td-content-grid,
+  .td-stats-layout { grid-template-columns: 1fr; }
+  .td-side-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .td-side-stack > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
 @media (max-width: 720px) {
   .team-detail {
     padding: 16px 12px calc(32px + var(--member-bottom-nav-height, 64px));
   }
 
-  .team-detail__record {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    width: 100%;
+  .team-detail__hero {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 18px;
   }
-
-  .team-detail__record-item {
-    min-width: 0;
-    padding: 9px 8px;
+  .team-heading :deep(.team-avatar-mark) {
+    width: 68px;
+    height: 68px;
+    flex-basis: 68px;
   }
-
   .team-detail__hero-actions {
     justify-content: flex-start;
     width: 100%;
   }
 
-  .td-hero-btn {
+  .td-hero-btn,
+  .td-hero-btn--primary {
     flex: 1 1 auto;
     justify-content: center;
   }
@@ -1835,6 +2542,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     padding-left: 12px;
     scrollbar-width: none;
   }
+  .team-detail__tab {
+    min-width: max-content;
+    min-height: 36px;
+  }
+  .td-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .td-side-stack { grid-template-columns: 1fr; }
+  .td-side-stack > :last-child:nth-child(odd) { grid-column: auto; }
+  .td-tab-heading { padding: 14px; }
+  .td-content-card--main { padding: 12px; }
+  .td-filter--surface { margin: -12px -12px 12px; padding: 10px 12px; }
+  .td-stats-toolbar { align-items: stretch; flex-direction: column; }
+  .td-search-wrap--stats { max-width: none; flex-basis: auto; }
+  .td-attendance,
+  .td-overview,
+  .td-offense { gap: 16px; }
 
   .team-detail__tabs::-webkit-scrollbar {
     display: none;
@@ -1887,6 +2609,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 }
 
 @media (max-width: 420px) {
+  .team-detail__identity-copy h1 { font-size: 1.35rem; }
+  .team-detail__record { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .team-detail__record-item b { font-size: 1.25rem; }
+  .td-metric-grid { grid-template-columns: 1fr; }
+  .td-event {
+    padding: 96px 14px 14px;
+  }
+  .td-event::before { left: 14px; top: 18px; }
+  .td-event::after { left: 32px; top: 36px; }
+  .td-member__role-pill { min-width: 62px; }
   .td-toolbar-btn {
     flex-basis: 100%;
   }
