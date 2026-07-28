@@ -7,7 +7,7 @@
 // changes. Falls back to a clean placeholder when no Maps key is configured
 // (mirrors PublicVenueMap). Purely a visual confirmation — no interaction.
 
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { loadGoogleMaps, hasGoogleMapsKey, MAP_ID } from '../lib/googleMaps'
 import calendarRaw from '../assets/calendar.svg?raw'
 import type { GeoPosition } from '../types'
@@ -27,6 +27,26 @@ const unavailable = ref(!hasGoogleMapsKey())
 let mapInstance: google.maps.Map | null = null
 let marker: google.maps.marker.AdvancedMarkerElement | null = null
 let googleNs: typeof google | null = null
+
+const fallbackMapUrl = computed(() => {
+  const position = props.position
+  if (!position || !Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return ''
+  if (position.lat === 0 && position.lng === 0) return ''
+  const latDelta = 0.018
+  const lngDelta = 0.026
+  const bbox = [
+    position.lng - lngDelta,
+    position.lat - latDelta,
+    position.lng + lngDelta,
+    position.lat + latDelta
+  ].join(',')
+  const query = new URLSearchParams({
+    bbox,
+    layer: 'mapnik',
+    marker: `${position.lat},${position.lng}`
+  })
+  return `https://www.openstreetmap.org/export/embed.html?${query.toString()}`
+})
 
 function isDarkMode(): boolean {
   return document.documentElement.classList.contains('dark-mode')
@@ -118,6 +138,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="evt-loc-map">
     <div v-if="!unavailable" ref="mapHost" class="evt-loc-map__canvas"></div>
+    <iframe
+      v-else-if="fallbackMapUrl"
+      class="evt-loc-map__canvas"
+      :src="fallbackMapUrl"
+      title="Selected event location"
+      loading="lazy"
+      referrerpolicy="no-referrer"
+    ></iframe>
     <!-- No Maps key — a clean placeholder (no third-party iframe). -->
     <div v-else class="evt-loc-map__placeholder">
       <span class="evt-loc-map__placeholder-icon" aria-hidden="true">

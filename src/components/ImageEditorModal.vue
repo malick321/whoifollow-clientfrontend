@@ -271,8 +271,8 @@ function save() {
   //   avatar : 480 × 480 square (the runtime UI displays it as
   //            a circle via border-radius, but the saved file is
   //            a full square so it can be reused in any shape).
-  //   cover  : 1600 × 900 — full 16:9 banner at retina-friendly
-  //            density.
+  //   cover  : 1280 × 720 — sharp enough for the event hero while keeping
+  //            multipart uploads comfortably below common proxy limits.
   let targetW: number
   let targetH: number
   if (isCircle.value) {
@@ -280,7 +280,7 @@ function save() {
   } else if (currentAspect.value === '1:1') {
     targetW = 1080; targetH = 1080
   } else {
-    targetW = 1600; targetH = 900
+    targetW = 1280; targetH = 720
   }
 
   const canvas = document.createElement('canvas')
@@ -289,7 +289,9 @@ function save() {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH)
-  const dataUrl = canvas.toDataURL('image/png')
+  // Covers are photographic content. JPEG avoids multi-megabyte PNG payloads
+  // that can be rejected by Nginx before Laravel receives the request.
+  const dataUrl = canvas.toDataURL(isCircle.value ? 'image/png' : 'image/jpeg', 0.82)
   emit('save', dataUrl)
   emit('update:modelValue', false)
 }

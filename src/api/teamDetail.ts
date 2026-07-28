@@ -59,7 +59,12 @@ export interface TeamEventItem {
   association?: string | null
   eventType?: string | null
   mediumTypeLabel?: string | null
+  locationType?: 'in_person' | 'online' | null
   location?: string | null
+  onlineUrl?: string | null
+  directorName?: string | null
+  directorEmail?: string | null
+  directorPhone?: string | null
   dateRangeLabel: string
   statusLabel: string
   goingCount?: number

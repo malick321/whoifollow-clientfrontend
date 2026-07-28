@@ -822,7 +822,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <p v-if="ev.association || ev.eventType" class="td-event__sub">
               {{ [ev.association, ev.eventType].filter(Boolean).join(' · ') }}
             </p>
-            <p v-if="ev.location" class="td-event__loc"><AppIcon name="home" :size="13" /> {{ ev.location }}</p>
+            <p v-if="ev.locationType === 'online'" class="td-event__loc">
+              <AppIcon name="message" :size="13" />
+              {{ ev.mediumTypeLabel || 'Online event' }}
+            </p>
+            <p v-else-if="ev.location" class="td-event__loc"><AppIcon name="home" :size="13" /> {{ ev.location }}</p>
+            <p v-if="ev.directorName" class="td-event__director">
+              <AppIcon name="people" :size="13" />
+              Director: {{ ev.directorName }}
+              <span v-if="ev.directorEmail">· {{ ev.directorEmail }}</span>
+            </p>
             <div v-if="ev.goingCount || ev.record" class="td-event__foot">
               <span v-if="ev.goingCount" class="td-event__going">
                 <AppIcon name="people" :size="13" /> {{ ev.goingCount }} going
@@ -2108,6 +2117,16 @@ i.is-orange { background: #f5a300; }
 .td-event__name { margin: 8px 0 0; font-size: 1.08rem; font-weight: 600; color: var(--text); }
 .td-event__sub { margin: 2px 0 0; color: var(--secondary); font-size: 0.82rem; }
 .td-event__loc { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0; color: var(--text-light); font-size: 0.8rem; }
+.td-event__director {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0 0;
+  color: var(--secondary);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+.td-event__director span { color: var(--text-light); }
 .td-event__foot {
   display: flex;
   align-items: center;

@@ -114,7 +114,9 @@ async function fetchEnvelope<T>(path: string, init: RequestInit = {}): Promise<T
   }
 
   if (!response.ok) {
-    const message =
+    const message = response.status === 413
+      ? 'The event cover is too large to upload. Choose the cover again so it can be optimized, then retry.'
+      :
       body && 'responseStatus' in body && body.responseStatus?.message?.trim()
         ? body.responseStatus.message.trim()
         : `Request failed with status ${response.status}.`

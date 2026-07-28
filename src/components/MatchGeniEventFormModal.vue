@@ -52,6 +52,7 @@ import { fetchSportTypes } from '../api/sportTypes'
 import { fetchMediums } from '../api/mediums'
 import { fetchMyAssociation } from '../api/myAssociations'
 import { currentAssociation } from '../constants/associations'
+import { authEmail, authUserName } from '../auth-session'
 import type {
   EventType,
   BracketFormatOption,
@@ -674,10 +675,10 @@ watch(
         entryFee.value = ''
         entryFeeDeadline.value = ''
         deadlineTouched.value = false
-        directorName.value = ''
+        directorName.value = authUserName.value || authEmail.value.split('@')[0] || ''
         mobCode.value = '+1'
         directorPhone.value = ''
-        directorEmail.value = ''
+        directorEmail.value = authEmail.value
         // Format & limits defaults (mirror the legacy form's starting values).
         bracketFormatId.value = ''
         poolPlayGuarantee.value = ''

@@ -180,6 +180,34 @@ function fallbackCityFromPlaceId(placeId: string): { city: string; state: string
   return city && state ? { city, state } : null
 }
 
+async function geocodeFallbackCity(city: string, state: string): Promise<GeoPosition | null> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 6000)
+  try {
+    const query = new URLSearchParams({
+      format: 'jsonv2',
+      limit: '1',
+      countrycodes: 'us',
+      q: `${city}, ${state}, United States`
+    })
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${query.toString()}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json', 'Accept-Language': 'en' }
+    })
+    if (!response.ok) return null
+    const rows = await response.json() as Array<{ lat?: string; lon?: string }>
+    const lat = Number(rows[0]?.lat)
+    const lng = Number(rows[0]?.lon)
+    return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
+      ? { lat, lng }
+      : null
+  } catch {
+    return null
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 function fallbackCityPredictions(query: string): PlacePrediction[] {
   const q = normalizeSearch(query)
   if (q.length < 2) return []
@@ -443,13 +471,14 @@ export async function fetchPlaceById(placeId: string): Promise<PlaceLookup | nul
   const fallback = fallbackCityFromPlaceId(placeId)
   if (fallback) {
     const formattedAddress = `${fallback.city}, ${fallback.state}, United States`
+    const position = await geocodeFallbackCity(fallback.city, fallback.state)
     return {
       placeId,
       name: `${fallback.city}, ${fallback.state}`,
       formattedAddress,
       city: fallback.city,
       state: fallback.state,
-      position: { lat: 0, lng: 0 },
+      position: position ?? { lat: 0, lng: 0 },
       photos: []
     }
   }
