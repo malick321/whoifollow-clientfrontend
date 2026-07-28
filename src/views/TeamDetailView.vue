@@ -782,7 +782,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             class="association-users__invite-btn td-tab-heading__action"
             @click="openCreateEvent"
           >
-            <span class="association-users__invite-icon association-events__create-icon" aria-hidden="true"></span>
+            <span class="association-users__invite-icon association-teams__create-icon" aria-hidden="true"></span>
             <span>Add Event</span>
           </button>
         </div>
@@ -844,7 +844,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             class="association-users__invite-btn td-placeholder-action"
             @click="openCreateEvent"
           >
-            <span class="association-users__invite-icon association-events__create-icon" aria-hidden="true"></span>
+            <span class="association-users__invite-icon association-teams__create-icon" aria-hidden="true"></span>
             <span>Create the first event</span>
           </button>
         </div>
@@ -1197,6 +1197,15 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       :team-id="teamId"
       :detail="detail"
       @saved="onTeamEdited"
+    />
+
+    <!-- Create a team-owned event (colleague's wizard in team mode). -->
+    <MatchGeniEventFormModal
+      v-if="teamId"
+      v-model="eventFormOpen"
+      :team-id="teamId"
+      :event-id="null"
+      @saved="onEventCreated"
     />
 
     <section v-if="messageOpen" class="td-chat-widget" aria-label="Quick chat" @click.stop>
@@ -1669,6 +1678,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   background: var(--surface-card);
+}
+/* "Add Event" action pinned to the right of the events tab heading. */
+.td-tab-heading__action {
+  margin-left: auto;
+  align-self: center;
+  flex: 0 0 auto;
+}
+/* CTA inside the empty-state placeholder. */
+.td-placeholder-action {
+  margin-top: 14px;
 }
 .td-tab-heading__icon {
   width: 48px;

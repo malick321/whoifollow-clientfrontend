@@ -1137,6 +1137,26 @@ export async function createEvent(
 }
 
 /**
+ * `POST /v2/chat/teams/{teamId}/events` — create a TEAM-owned event
+ * (from the team detail page). See docs/api/team-events-api-contract.md.
+ *
+ * `{teamId}` is the firebase-style `teams.team_id` string; the backend
+ * derives team_id / owner_type=0 / owner_linked_id from the route + the
+ * authorized team-admin membership. None are sent in the body. Reuses the
+ * same multipart serializer as `createEvent`.
+ */
+export async function createTeamEvent(
+  teamId: string,
+  payload: SaveEventPayload,
+  avatar?: EventAvatarUpload
+): Promise<Event> {
+  return fetchEnvelope<Event>(
+    `/chat/teams/${encodeURIComponent(teamId)}/events`,
+    { method: 'POST', body: eventPayloadToFormData(payload, avatar) }
+  )
+}
+
+/**
  * `PUT /v2/association/events/{associationId}/{eventId}` — full
  * replace. Enforces the lifecycle transition state machine.
  */

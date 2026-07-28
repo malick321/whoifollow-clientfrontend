@@ -45,7 +45,7 @@ import CustomFieldsRenderer from './CustomFieldsRenderer.vue'
 import { fetchCustomFieldDefinitions } from '../api/customFields'
 import { fetchPlaceById } from '../api/placesLookup'
 import { themeMode } from '../theme'
-import { EVENT_TYPES_CATALOGUE, EVENT_TIMEZONES, PAYMENT_TERMS_OPTIONS, PARTIAL_PAYMENT_TYPE_OPTIONS, createEvent, updateEvent, fetchEvent, type EventAvatarUpload } from '../api/events'
+import { EVENT_TYPES_CATALOGUE, EVENT_TIMEZONES, PAYMENT_TERMS_OPTIONS, PARTIAL_PAYMENT_TYPE_OPTIONS, createEvent, createTeamEvent, updateEvent, fetchEvent, type EventAvatarUpload } from '../api/events'
 import { fetchBracketFormats } from '../api/bracketFormats'
 import { fetchSeedingCriteria } from '../api/seedingCriteria'
 import { fetchSportTypes } from '../api/sportTypes'
@@ -76,10 +76,18 @@ const props = withDefaults(defineProps<{
   associationName?: string
   /** Event id to edit. `null` (or omitted) for the Create flow. */
   eventId?: string | null
+  /**
+   * Team-mode scope. When set, the wizard creates a TEAM-owned event via
+   * `createTeamEvent(teamId, …)` (POST /v2/chat/teams/{teamId}/events) instead
+   * of the association endpoint, and the step flow is trimmed to
+   * Details → Location → Review (no format / registration / custom fields).
+   */
+  teamId?: string
 }>(), {
   associationId: '',
   associationName: '',
-  eventId: null
+  eventId: null,
+  teamId: ''
 })
 
 const emit = defineEmits<{
@@ -90,6 +98,9 @@ const emit = defineEmits<{
 }>()
 
 const isEdit = computed(() => props.eventId !== null && props.eventId !== undefined)
+// Team mode = launched from a team detail page with a `teamId`. Creates a
+// team-owned event; trims the wizard to Details → Location → Review.
+const isTeamMode = computed(() => !!props.teamId)
 const title = computed(() => (isEdit.value ? 'Edit Event' : 'New Event'))
 
 // The create/update endpoints key on the NUMERIC association id (the backend
@@ -119,6 +130,12 @@ const ALL_STEPS: StepDef[] = [
   { key: 'review', label: 'Review', hint: 'Confirm & create' }
 ]
 const STEPS = computed<StepDef[]>(() => {
+  // Team mode: only Details → Location → Review (no format / registration /
+  // custom fields — those are association-scoped). Online still drops Location.
+  if (isTeamMode.value) {
+    const teamSteps = ALL_STEPS.filter((s) => s.key === 'details' || s.key === 'location' || s.key === 'review')
+    return locationType.value === 'online' ? teamSteps.filter((s) => s.key !== 'location') : teamSteps
+  }
   // Drop the Additional-details step entirely when the association has no
   // custom fields for events — no point showing an empty step.
   const base = customFieldDefs.value.length ? ALL_STEPS : ALL_STEPS.filter((s) => s.key !== 'additional')
@@ -633,8 +650,9 @@ watch(
       void loadMediums()
       // Create resolves Stripe status from the association; edit uses the
       // event's own `stripeConnectedStatus` (applied in hydrate()).
-      if (!isEdit.value) void loadStripeStatus()
-      void loadCustomFields()
+      // Team mode has no association → skip Stripe + custom-field lookups.
+      if (!isEdit.value && !isTeamMode.value) void loadStripeStatus()
+      if (!isTeamMode.value) void loadCustomFields()
       if (isEdit.value) {
         void hydrateFromId(props.eventId ?? null)
       } else {
@@ -1138,16 +1156,19 @@ async function save() {
   registrationAttempted.value = true
   if (detailsFieldErrors.value.size > 0) { step.value = 'details'; return }
   if (locationFieldErrors.value.size > 0) { step.value = 'location'; return }
-  if (formatFieldErrors.value.size > 0) { step.value = 'format'; return }
-  if (registrationFieldErrors.value.size > 0) { step.value = 'registration'; return }
+  // Format + registration steps don't exist in team mode — skip their gates.
+  if (!isTeamMode.value && formatFieldErrors.value.size > 0) { step.value = 'format'; return }
+  if (!isTeamMode.value && registrationFieldErrors.value.size > 0) { step.value = 'registration'; return }
   saving.value = true
   saveError.value = ''
   try {
     const payload = buildPayload()
     const avatar = buildAvatarUpload()
-    const saved = isEdit.value && props.eventId
-      ? await updateEvent(associationApiId.value, props.eventId, payload, avatar)
-      : await createEvent(associationApiId.value, payload, avatar)
+    const saved = isTeamMode.value
+      ? await createTeamEvent(props.teamId, payload, avatar)
+      : isEdit.value && props.eventId
+        ? await updateEvent(associationApiId.value, props.eventId, payload, avatar)
+        : await createEvent(associationApiId.value, payload, avatar)
     emit('saved', saved)
     close()
   } catch (e) {
@@ -1721,7 +1742,7 @@ function onSubmit() { void save() }
             <div><dt>Dates</dt><dd>{{ reviewDates }}</dd></div>
             <div><dt>Timezone</dt><dd>{{ timeZoneLabel || '—' }}</dd></div>
             <div><dt>Director</dt><dd>{{ reviewDirector }}</dd></div>
-            <template v-if="locationType !== 'online'">
+            <template v-if="!isTeamMode && locationType !== 'online'">
               <div><dt>Format</dt><dd>{{ reviewFormat }}</dd></div>
               <div><dt>Time limits</dt><dd>Pool {{ poolLimit || '—' }} · Bracket {{ bracketLimit || '—' }} · Champ {{ championshipLimit || '—' }} · Slot {{ gameTimeSlot || '—' }} (min)</dd></div>
               <div><dt>Tie breakers</dt><dd>{{ selectedSeedNames.length ? selectedSeedNames.join(', ') : 'Event default' }}</dd></div>

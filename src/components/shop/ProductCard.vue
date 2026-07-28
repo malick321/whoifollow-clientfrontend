@@ -275,7 +275,10 @@ const emit = defineEmits<{
     flex: 0 0 auto;
     width: 100%;
     min-height: 0;
-    aspect-ratio: 1 / 0.78;
+    /* Shorter ratio + hard cap so the image can't dominate the phone viewport.
+       Mirrors the detail modal's max-height cap (ProductDetailModal .product-detail__hero). */
+    aspect-ratio: 16 / 10;
+    max-height: 46vw;
     border-right: 0;
     border-bottom: 1px solid var(--border-divider);
   }
