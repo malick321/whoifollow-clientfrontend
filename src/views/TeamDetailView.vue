@@ -35,11 +35,13 @@ import {
 import {
   fetchTeamAssociation,
   fetchTeamEvents,
+  fetchTeamEventsData,
   fetchTeamGameStats,
   fetchTeamMembers,
   fetchTeamPlayerStats,
   type TeamAssociation,
   type TeamEventItem,
+  type TeamEventFilterOptions,
   type TeamGameStats,
   type TeamMemberItem,
   type TeamPlayerStat,
@@ -158,12 +160,23 @@ const sortedGameStats = computed(() => {
   )
 })
 
-// ── Filters / sort (client-side, on already-loaded tab data) ─────────────────
-const filterYear = ref('all')
+// ── Filters / sort ───────────────────────────────────────────────────────────
+const currentYear = new Date().getFullYear()
+const filterYear = ref(String(currentYear))
 const filterType = ref('all')
 const filterAssoc = ref('all')
 const filterState = ref('all')
-const showPast = ref(true)
+const showPast = ref(false)
+const eventFilterOptions = ref<TeamEventFilterOptions>({
+  availableYears: [currentYear],
+  eventTypes: [],
+  associations: [],
+  states: [],
+  defaultYear: currentYear,
+  selectedYear: currentYear,
+  past: false,
+  pastLocked: false
+})
 const memberRole = ref<'all' | 'admins' | 'players' | 'fans'>('all')
 const memberSearch = ref('')
 const statEvent = ref('all')
@@ -176,18 +189,18 @@ const PLAYER_SORTS: { key: PlayerSortKey; label: string }[] = [
   { key: 'rbi', label: 'RBI' }, { key: 'r', label: 'Runs' }, { key: 'ab', label: 'At Bats' },
   { key: 'games', label: 'Games' }
 ]
-function eventYear(e: TeamEventItem): string {
-  const m = String(e.dateRangeLabel || '').match(/\b(20\d{2})\b/)
-  return m ? m[1] : ''
-}
-function eventState(e: TeamEventItem): string {
-  const parts = String(e.location || '').split(',').map((s) => s.trim()).filter(Boolean)
-  return parts.length > 1 ? parts[parts.length - 1] : ''
-}
-const eventYears = computed(() => [...new Set(events.value.map(eventYear).filter(Boolean))].sort().reverse())
-const eventTypes = computed(() => [...new Set(events.value.map((e) => e.eventType).filter(Boolean))] as string[])
-const eventAssocs = computed(() => [...new Set(events.value.map((e) => e.association).filter(Boolean))] as string[])
-const eventStates = computed(() => [...new Set(events.value.map(eventState).filter(Boolean))])
+const eventYears = computed(() => eventFilterOptions.value.availableYears.map(String))
+const eventTypes = computed(() => eventFilterOptions.value.eventTypes)
+const eventAssocs = computed(() => eventFilterOptions.value.associations)
+const eventStates = computed(() => eventFilterOptions.value.states)
+const pastEventsLocked = computed(() => Number(filterYear.value) !== currentYear)
+const eventFiltersChanged = computed(() =>
+  filterYear.value !== String(currentYear) ||
+  filterType.value !== 'all' ||
+  filterAssoc.value !== 'all' ||
+  filterState.value !== 'all' ||
+  showPast.value
+)
 
 // MultiSelectDropdown (colleague's filter component) uses a string[] v-model;
 // our filters are single 'all'-or-value strings, so adapt array <-> string.
@@ -212,16 +225,15 @@ const MEMBER_ROLES: { key: 'all' | 'admins' | 'players' | 'fans'; label: string 
   { key: 'players', label: 'Players' }, { key: 'fans', label: 'Fans' }
 ]
 
-const filteredEvents = computed(() =>
-  events.value.filter((e) => {
-    if (filterYear.value !== 'all' && eventYear(e) !== filterYear.value) return false
-    if (filterType.value !== 'all' && e.eventType !== filterType.value) return false
-    if (filterAssoc.value !== 'all' && e.association !== filterAssoc.value) return false
-    if (filterState.value !== 'all' && eventState(e) !== filterState.value) return false
-    if (!showPast.value && e.statusLabel === 'Completed') return false
-    return true
-  })
-)
+const filteredEvents = computed(() => events.value)
+
+function resetEventFilters() {
+  filterYear.value = String(currentYear)
+  filterType.value = 'all'
+  filterAssoc.value = 'all'
+  filterState.value = 'all'
+  showPast.value = false
+}
 
 const filteredMembers = computed(() => {
   const q = memberSearch.value.trim().toLowerCase()
@@ -339,9 +351,16 @@ async function loadTab(tab: TabKey) {
   loadingTab.value = true
   try {
     if (tab === 'events') {
-      const data = await fetchTeamEvents(teamId.value)
+      const data = await fetchTeamEventsData(teamId.value, {
+        year: filterYear.value,
+        eventType: filterType.value,
+        association: filterAssoc.value,
+        state: filterState.value,
+        past: showPast.value
+      })
       if (reqId !== tabReqId) return
-      events.value = data
+      events.value = data.events
+      eventFilterOptions.value = data.filters
     } else if (tab === 'teammates') {
       const data = await fetchTeamMembers(teamId.value)
       if (reqId !== tabReqId) return
@@ -622,6 +641,17 @@ function openTargetChat() {
 
 // Stat filter changes re-fetch the active stats tab. (Tab switches load via
 // setTab / onMounted, so no activeTab watcher is needed — that would double-fire.)
+watch([filterYear, filterType, filterAssoc, filterState, showPast], ([year]) => {
+  const selectedYear = Number(year)
+  const forcedPast = selectedYear < currentYear
+  const forcedUpcoming = selectedYear > currentYear
+  if ((forcedPast && !showPast.value) || (forcedUpcoming && showPast.value)) {
+    showPast.value = forcedPast
+    return
+  }
+  if (activeTab.value === 'events') void loadTab('events')
+})
+
 watch([statEvent, statType, statAssoc], () => {
   if (activeTab.value !== 'player-stats' && activeTab.value !== 'team-stats') return
   void loadTab(activeTab.value)
@@ -806,7 +836,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </div>
         <div class="td-content-grid">
           <section class="td-content-card td-content-card--main">
-        <div v-if="events.length" class="association-teams__filters td-events-filters">
+        <div class="association-teams__filters td-events-filters">
           <MultiSelectDropdown v-model="filterYearArr" :options="eventYears" placeholder="Year" single :searchable="false" aria-label="Year" />
           <MultiSelectDropdown v-model="filterTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
           <MultiSelectDropdown v-model="filterAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
@@ -815,10 +845,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             type="button"
             class="association-events__past-toggle"
             :class="{ 'association-events__past-toggle--on': showPast }"
+            :disabled="pastEventsLocked"
             role="switch"
             :aria-checked="showPast ? 'true' : 'false'"
             @click="showPast = !showPast"
           >Past Events</button>
+          <button v-if="eventFiltersChanged" type="button" class="td-events-reset" @click="resetEventFilters">
+            <AppIcon name="task" :size="15" />Reset Filters
+          </button>
         </div>
         <ul v-if="filteredEvents.length" class="team-detail__events">
           <li
@@ -1495,6 +1529,28 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 .td-filter--split { justify-content: space-between; }
 /* Events filter row — colleague's MultiSelectDropdown pills; wrap on mobile. */
 .td-events-filters { margin: 0 0 14px; flex-wrap: wrap; }
+.association-events__past-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+.td-events-reset {
+  min-height: 36px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid var(--border-divider);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.td-events-reset:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 @media (max-width: 720px) {
   .td-events-filters { gap: 8px; }
   .td-events-filters > * { flex: 1 1 calc(50% - 8px); }

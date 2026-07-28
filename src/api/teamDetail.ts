@@ -71,11 +71,59 @@ export interface TeamEventItem {
   record?: { games: number; won: number; lost: number }
 }
 
-export async function fetchTeamEvents(teamId: string): Promise<TeamEventItem[]> {
-  const data = await fetchData<{ events: TeamEventItem[] }>(
-    `/chat/teams/${encodeURIComponent(teamId)}/events`
+export interface TeamEventFilterOptions {
+  availableYears: number[]
+  eventTypes: string[]
+  associations: string[]
+  states: string[]
+  defaultYear: number
+  selectedYear: number
+  past: boolean
+  pastLocked: boolean
+}
+
+export interface TeamEventFilters {
+  year?: string | number
+  eventType?: string
+  association?: string
+  state?: string
+  past?: boolean
+}
+
+export interface TeamEventsData {
+  events: TeamEventItem[]
+  filters: TeamEventFilterOptions
+}
+
+export async function fetchTeamEventsData(teamId: string, filters: TeamEventFilters = {}): Promise<TeamEventsData> {
+  const params = new URLSearchParams()
+  if (filters.year) params.set('year', String(filters.year))
+  if (filters.eventType && filters.eventType !== 'all') params.set('eventType', filters.eventType)
+  if (filters.association && filters.association !== 'all') params.set('association', filters.association)
+  if (filters.state && filters.state !== 'all') params.set('state', filters.state)
+  params.set('past', filters.past ? 'true' : 'false')
+  const query = params.toString()
+  const data = await fetchData<{ events: TeamEventItem[]; filters?: TeamEventFilterOptions }>(
+    `/chat/teams/${encodeURIComponent(teamId)}/events${query ? `?${query}` : ''}`
   )
-  return Array.isArray(data?.events) ? data!.events : []
+  const currentYear = new Date().getFullYear()
+  return {
+    events: Array.isArray(data?.events) ? data!.events : [],
+    filters: data?.filters ?? {
+      availableYears: [currentYear],
+      eventTypes: [],
+      associations: [],
+      states: [],
+      defaultYear: currentYear,
+      selectedYear: currentYear,
+      past: false,
+      pastLocked: false
+    }
+  }
+}
+
+export async function fetchTeamEvents(teamId: string): Promise<TeamEventItem[]> {
+  return (await fetchTeamEventsData(teamId)).events
 }
 
 // ── Player Statistics tab ────────────────────────────────────────────────────
