@@ -2111,6 +2111,16 @@ i.is-orange { background: #f5a300; }
   min-height: 146px;
   background: var(--surface-card);
 }
+.td-event--clickable {
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+.td-event--clickable:hover,
+.td-event--clickable:focus-visible {
+  border-color: #338df0;
+  transform: translateY(-1px);
+  outline: none;
+}
 .td-event::before {
   content: '';
   position: absolute;
