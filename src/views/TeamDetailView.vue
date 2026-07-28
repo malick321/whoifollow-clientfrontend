@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import EditTeamModal from '../components/chat/EditTeamModal.vue'
 import MatchGeniEventFormModal from '../components/MatchGeniEventFormModal.vue'
+import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import InviteToTeamModal from '../components/chat/InviteToTeamModal.vue'
 import MessageComposer from '../components/chat/MessageComposer.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
@@ -187,6 +188,19 @@ const eventYears = computed(() => [...new Set(events.value.map(eventYear).filter
 const eventTypes = computed(() => [...new Set(events.value.map((e) => e.eventType).filter(Boolean))] as string[])
 const eventAssocs = computed(() => [...new Set(events.value.map((e) => e.association).filter(Boolean))] as string[])
 const eventStates = computed(() => [...new Set(events.value.map(eventState).filter(Boolean))])
+
+// MultiSelectDropdown (colleague's filter component) uses a string[] v-model;
+// our filters are single 'all'-or-value strings, so adapt array <-> string.
+function selectAdapter(state: { value: string }) {
+  return computed<string[]>({
+    get: () => (state.value === 'all' ? [] : [state.value]),
+    set: (v) => { state.value = v[0] ?? 'all' }
+  })
+}
+const filterYearArr = selectAdapter(filterYear)
+const filterTypeArr = selectAdapter(filterType)
+const filterAssocArr = selectAdapter(filterAssoc)
+const filterStateArr = selectAdapter(filterState)
 const statFilterPayload = computed<TeamStatsFilters>(() => ({
   eventId: statEvent.value,
   eventType: statType.value,
@@ -310,6 +324,10 @@ function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   if (status === 'Ongoing') return 'success'
   if (status === 'Completed') return 'secondary'
   return 'neutral'
+}
+
+function openEventDetail(eventId: string) {
+  router.push({ name: 'team-event-detail', params: { teamId: teamId.value, eventId } })
 }
 
 // Always refetch on tab activation — the user wants fresh data on every switch,
@@ -788,32 +806,30 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </div>
         <div class="td-content-grid">
           <section class="td-content-card td-content-card--main">
-        <div v-if="events.length" class="td-filter td-filter--wrap td-filter--surface">
-          <select v-model="filterYear" class="td-select" aria-label="Year">
-            <option value="all">Year</option>
-            <option v-for="y in eventYears" :key="y" :value="y">{{ y }}</option>
-          </select>
-          <select v-model="filterType" class="td-select" aria-label="Type">
-            <option value="all">Type</option>
-            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <select v-model="filterAssoc" class="td-select" aria-label="Association">
-            <option value="all">Association</option>
-            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
-          </select>
-          <select v-model="filterState" class="td-select" aria-label="State">
-            <option value="all">State</option>
-            <option v-for="s in eventStates" :key="s" :value="s">{{ s }}</option>
-          </select>
+        <div v-if="events.length" class="association-teams__filters td-events-filters">
+          <MultiSelectDropdown v-model="filterYearArr" :options="eventYears" placeholder="Year" single :searchable="false" aria-label="Year" />
+          <MultiSelectDropdown v-model="filterTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
+          <MultiSelectDropdown v-model="filterAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
+          <MultiSelectDropdown v-model="filterStateArr" :options="eventStates" placeholder="State" single :searchable="false" aria-label="State" />
           <button
             type="button"
-            class="td-filter__chip"
-            :class="{ 'td-filter__chip--active': showPast }"
+            class="association-events__past-toggle"
+            :class="{ 'association-events__past-toggle--on': showPast }"
+            role="switch"
+            :aria-checked="showPast ? 'true' : 'false'"
             @click="showPast = !showPast"
           >Past Events</button>
         </div>
         <ul v-if="filteredEvents.length" class="team-detail__events">
-          <li v-for="ev in filteredEvents" :key="ev.id" class="td-event">
+          <li
+            v-for="ev in filteredEvents"
+            :key="ev.id"
+            class="td-event td-event--clickable"
+            role="link"
+            tabindex="0"
+            @click="openEventDetail(ev.id)"
+            @keydown.enter="openEventDetail(ev.id)"
+          >
             <div class="td-event__top">
               <StatusBadge :label="ev.statusLabel" :tone="eventTone(ev.statusLabel)" />
               <span class="td-event__date">{{ ev.dateRangeLabel }}</span>
@@ -862,7 +878,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <section class="td-side-card">
               <div class="td-side-card__head"><h3>Upcoming Highlights</h3><span>{{ events.length }} events</span></div>
               <div v-if="events.length" class="td-highlight-list">
-                <button v-for="event in events.slice(0, 3)" :key="`highlight-${event.id}`" type="button" class="td-highlight">
+                <button v-for="event in events.slice(0, 3)" :key="`highlight-${event.id}`" type="button" class="td-highlight" @click="openEventDetail(event.id)">
                   <span class="td-highlight__icon"><AppIcon name="trophy" :size="17" /></span>
                   <span><b>{{ event.name }}</b><small>{{ event.dateRangeLabel }}</small></span>
                   <StatusBadge :label="event.statusLabel" :tone="eventTone(event.statusLabel)" />
@@ -1458,10 +1474,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   background: var(--surface-pill);
 }
 .team-detail__tab--active {
-  border-color: #5577ff;
+  border-color: var(--primary);
   color: #fff;
-  background: linear-gradient(110deg, #2388ff, #8b2cf5);
-  box-shadow: 0 5px 14px rgba(66, 79, 255, 0.28);
+  background: var(--primary);
+  box-shadow: 0 4px 12px rgba(45, 140, 240, 0.22);
 }
 
 .team-detail__panel { min-height: 360px; }
@@ -1477,6 +1493,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   margin-bottom: 14px;
 }
 .td-filter--split { justify-content: space-between; }
+/* Events filter row — colleague's MultiSelectDropdown pills; wrap on mobile. */
+.td-events-filters { margin: 0 0 14px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .td-events-filters { gap: 8px; }
+  .td-events-filters > * { flex: 1 1 calc(50% - 8px); }
+}
 .td-filter--wrap { flex-wrap: wrap; }
 .td-select {
   height: 34px;
@@ -1789,7 +1811,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   justify-content: center;
   border-radius: 7px;
   color: #fff;
-  background: linear-gradient(135deg, #2588ff, #356de8);
+  background: var(--primary);
 }
 .td-highlight > span:nth-child(2),
 .td-action-list button > span:nth-child(2) {
@@ -1941,7 +1963,7 @@ i.is-orange { background: #f5a300; }
   cursor: pointer;
 }
 .td-action-list button:last-child { border-bottom: 0; }
-.td-action-list__icon.is-violet { background: linear-gradient(135deg, #6f45ff, #a82cf5); }
+.td-action-list__icon.is-violet { background: #6f45ff; }
 .td-help-card {
   display: flex;
   align-items: center;
@@ -2098,7 +2120,7 @@ i.is-orange { background: #f5a300; }
   height: 62px;
   border: 1px solid #6f45ff;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(111,69,255,.24), rgba(37,136,255,.06));
+  background: rgba(45, 140, 240, 0.10);
   box-shadow: inset 0 0 24px rgba(111, 69, 255, .14);
 }
 .td-event::after {
