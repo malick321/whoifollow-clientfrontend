@@ -193,19 +193,28 @@ function open(url?: string) {
 
 /* Logo overlapping the banner */
 .ngt-acard__logo {
-  margin: -30px 0 0 16px;
-  width: max-content;
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  z-index: 2;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   padding: 3px;
   background: var(--surface-card);
   box-shadow: 0 0 0 1px var(--border-divider);
+}
+.ngt-acard__logo :deep(.team-avatar-mark) {
+  width: 52px;
+  height: 52px;
+  box-shadow: none;
 }
 
 .ngt-acard__body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 8px 16px 12px;
+  padding: 36px 16px 12px;
   flex: 1 1 auto;
 }
 .ngt-acard__name {
