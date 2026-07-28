@@ -43,6 +43,12 @@ const attendanceSaving = ref(false)
 const gameStatus = ref<'all' | EventBoxscore['status']>('all')
 const playerSearch = ref('')
 const playerSort = ref<'onbase' | 'average' | 'games' | 'hr' | 'rbi'>('onbase')
+const playerLineup = ref('all')
+const playerRole = ref('all')
+const playerView = ref('standard')
+const teamDateRange = ref('all')
+const teamSplit = ref('all')
+const teamOpponent = ref('all')
 const rosterView = ref<'going' | 'not_responded'>('going')
 let requestId = 0
 
@@ -52,13 +58,31 @@ const visibleGames = computed(() =>
 const visiblePlayers = computed(() => {
   const query = playerSearch.value.trim().toLowerCase()
   return [...players.value]
-    .filter((player) => !query || player.name.toLowerCase().includes(query))
+    .filter((player) => {
+      if (query && !player.name.toLowerCase().includes(query)) return false
+      if (playerRole.value !== 'all' && player.role !== playerRole.value) return false
+      return true
+    })
     .sort((a, b) => {
       const key = playerSort.value
       return key === 'onbase' || key === 'average'
         ? Number.parseFloat(b[key]) - Number.parseFloat(a[key])
         : b[key] - a[key]
     })
+})
+const playerRoles = computed(() => [...new Set(players.value.map((player) => player.role).filter(Boolean))])
+const teamOpponents = computed(() => [...new Set(teamStats.value.games.map((game) => game.opponentName).filter(Boolean))].sort())
+const visibleTeamGames = computed(() => {
+  let rows = [...teamStats.value.games]
+  if (teamSplit.value === 'won' || teamSplit.value === 'lost') {
+    rows = rows.filter((game) => game.result === teamSplit.value)
+  }
+  if (teamOpponent.value !== 'all') {
+    rows = rows.filter((game) => game.opponentName === teamOpponent.value)
+  }
+  if (teamDateRange.value === 'last3') rows = rows.slice(-3)
+  if (teamDateRange.value === 'last7') rows = rows.slice(-7)
+  return rows
 })
 const attendanceMembers = computed(() => {
   const status = rosterView.value === 'going' ? 'going' : 'not_responded'
@@ -81,9 +105,23 @@ const playerTotals = computed<EventBattingStats>(() => {
   total.average = (players.value.reduce((sum, player) => sum + Number(player.average), 0) / players.value.length).toFixed(3)
   return total
 })
+const visibleTeamTotals = computed<EventBattingStats>(() => {
+  if (!visibleTeamGames.value.length) return defaultStats()
+  const total = visibleTeamGames.value.reduce((sum, game) => {
+    for (const key of ['games', 'ab', 'h', 'oneB', 'twoB', 'threeB', 'hr', 'rbi', 'runs', 'bb', 'sac', 'errors'] as const) {
+      sum[key] += game[key]
+    }
+    return sum
+  }, defaultStats())
+  const hits = total.oneB + total.twoB + total.threeB + total.hr
+  total.average = total.ab > 0 ? (hits / total.ab).toFixed(3) : '0.000'
+  total.onbase = total.ab > 0 ? ((hits + total.bb + total.errors) / total.ab).toFixed(3) : '0.000'
+  total.games = visibleTeamGames.value.length
+  return total
+})
 const activeStats = computed(() => activeTab.value === 'player-stats'
   ? playerTotals.value
-  : (teamStats.value.total ?? defaultStats()))
+  : visibleTeamTotals.value)
 const metricCards = computed(() => [
   { label: activeTab.value === 'player-stats' ? 'Games Played' : 'Onbase %', value: activeTab.value === 'player-stats' ? activeStats.value.games : activeStats.value.onbase, hint: activeTab.value === 'player-stats' ? 'Total' : 'Event average', icon: 'game' as const, tone: 'blue' },
   { label: activeTab.value === 'player-stats' ? 'Onbase %' : 'Average', value: activeTab.value === 'player-stats' ? activeStats.value.onbase : activeStats.value.average, hint: 'Event average', icon: 'trophy' as const, tone: 'violet' },
@@ -100,7 +138,7 @@ const offenseStyle = computed(() => {
   return { background: `conic-gradient(#2688ff 0 ${one}%, #8b43ef ${one}% ${two}%, #f4b317 ${two}% ${three}%, #16bd78 ${three}% 100%)` }
 })
 const chartLines = computed(() => {
-  const rows = teamStats.value.games.slice(0, 8)
+  const rows = visibleTeamGames.value.slice(0, 8)
   const points = (key: 'onbase' | 'average') => {
     if (!rows.length) return key === 'onbase' ? '20,76 140,58 260,64 380,40 500,55 620,38 740,52' : '20,88 140,78 260,84 380,67 500,75 620,60 740,68'
     const max = Math.max(...rows.map((row) => Number(row[key])), 0.001)
@@ -134,6 +172,35 @@ function initials(name: string): string {
 }
 function gameStatusLabel(status: EventBoxscore['status']): string {
   return status === 'ongoing' ? 'Ongoing' : status === 'final' ? 'Final' : 'Scheduled'
+}
+function resetPlayerFilters() {
+  playerLineup.value = 'all'
+  playerRole.value = 'all'
+  playerSort.value = 'onbase'
+  playerView.value = 'standard'
+  playerSearch.value = ''
+}
+function resetTeamFilters() {
+  teamDateRange.value = 'all'
+  teamSplit.value = 'all'
+  teamOpponent.value = 'all'
+}
+function exportPlayerStats() {
+  const header = ['Player', 'Games', 'Onbase %', 'Average', 'AB', 'H', 'HR', 'RBI', 'Runs']
+  const rows = visiblePlayers.value.map((player) => [
+    player.name, player.games, player.onbase, player.average, player.ab,
+    player.h, player.hr, player.rbi, player.runs
+  ])
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${overview.value?.name || 'event'}-player-statistics.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 function setTab(tab: TabKey) {
   if (tab === activeTab.value) return
@@ -322,15 +389,54 @@ onMounted(async () => {
       </div>
 
       <section v-else class="ed-stats-view">
-        <div class="ed-stats-toolbar">
-          <div class="ed-filter-block"><small>Scope</small><b>Event</b></div>
-          <div class="ed-filter-block"><small>Date Range</small><b>All Games</b></div>
-          <div v-if="activeTab === 'player-stats'" class="ed-search">
-            <AppIcon name="search" :size="16" /><input v-model="playerSearch" type="search" placeholder="Search players" aria-label="Search players" />
+        <div v-if="activeTab === 'player-stats'" class="ed-stats-toolbar ed-stats-toolbar--player">
+          <label class="ed-select-control">
+            <span><AppIcon name="people" :size="15" /><small>Lineup Type</small></span>
+            <select v-model="playerLineup" aria-label="Lineup type"><option value="all">All Lineups</option></select>
+          </label>
+          <label class="ed-select-control">
+            <span><AppIcon name="award" :size="15" /><small>Role</small></span>
+            <select v-model="playerRole" aria-label="Player role">
+              <option value="all">All Roles</option>
+              <option v-for="role in playerRoles" :key="role" :value="role">{{ role }}</option>
+            </select>
+          </label>
+          <label class="ed-select-control">
+            <span><AppIcon name="text" :size="15" /><small>Sort By</small></span>
+            <select v-model="playerSort" aria-label="Sort player statistics">
+              <option value="games">Games Played</option><option value="onbase">Onbase %</option><option value="average">Average</option><option value="hr">Home Runs</option><option value="rbi">RBI</option>
+            </select>
+          </label>
+          <label class="ed-select-control">
+            <span><AppIcon name="document" :size="15" /><small>View</small></span>
+            <select v-model="playerView" aria-label="Statistics view"><option value="standard">Standard</option><option value="compact">Compact</option></select>
+          </label>
+          <div class="ed-toolbar-spacer"></div>
+          <div class="ed-search">
+            <AppIcon name="search" :size="16" /><input v-model="playerSearch" type="search" placeholder="Search players..." aria-label="Search players" />
           </div>
-          <select v-if="activeTab === 'player-stats'" v-model="playerSort" aria-label="Sort player statistics">
-            <option value="onbase">Sort: Onbase %</option><option value="average">Sort: Average</option><option value="games">Sort: Games</option><option value="hr">Sort: Home Runs</option><option value="rbi">Sort: RBI</option>
-          </select>
+          <button type="button" class="ed-square-btn" title="Reset filters" aria-label="Reset filters" @click="resetPlayerFilters"><AppIcon name="task" :size="18" /></button>
+          <button type="button" class="ed-export-btn" @click="exportPlayerStats"><AppIcon name="document" :size="17" />Export</button>
+        </div>
+        <div v-else class="ed-stats-toolbar ed-stats-toolbar--team">
+          <label class="ed-select-control">
+            <small>Scope</small>
+            <select aria-label="Statistics scope"><option>Event</option></select>
+          </label>
+          <label class="ed-select-control">
+            <small>Date Range</small>
+            <select v-model="teamDateRange" aria-label="Date range"><option value="all">All Games</option><option value="last3">Last 3 Games</option><option value="last7">Last 7 Games</option></select>
+          </label>
+          <label class="ed-select-control">
+            <small>Split</small>
+            <select v-model="teamSplit" aria-label="Result split"><option value="all">All</option><option value="won">Won</option><option value="lost">Lost</option></select>
+          </label>
+          <label class="ed-select-control ed-select-control--wide">
+            <small>Opponent</small>
+            <select v-model="teamOpponent" aria-label="Opponent"><option value="all">All</option><option v-for="opponent in teamOpponents" :key="opponent" :value="opponent">{{ opponent }}</option></select>
+          </label>
+          <div class="ed-toolbar-spacer"></div>
+          <button type="button" class="ed-reset-btn" @click="resetTeamFilters"><AppIcon name="task" :size="17" />Reset Filters</button>
         </div>
 
         <div class="ed-metrics">
@@ -344,7 +450,7 @@ onMounted(async () => {
           <section class="ed-panel ed-table-panel">
             <div class="ed-side-title"><h2>Player Statistics</h2><span>{{ visiblePlayers.length }} players</span></div>
             <div class="ed-table-scroll">
-              <table>
+              <table :class="{ 'is-compact': playerView === 'compact' }">
                 <thead><tr><th>Player</th><th>Games</th><th>Onbase %</th><th>Average</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>R</th></tr></thead>
                 <tbody>
                   <tr v-for="(player, index) in visiblePlayers" :key="player.userId">
@@ -378,16 +484,16 @@ onMounted(async () => {
             </section>
           </div>
           <section class="ed-panel ed-table-panel">
-            <div class="ed-side-title"><h2>Event Team Statistics</h2><span>{{ teamStats.games.length }} games</span></div>
+            <div class="ed-side-title"><h2>Event Team Statistics</h2><span>{{ visibleTeamGames.length }} games</span></div>
             <div class="ed-table-scroll">
               <table class="ed-team-table">
                 <thead><tr><th>Game</th><th>Result</th><th>Onbase %</th><th>Average</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>R</th><th>BB</th></tr></thead>
                 <tbody>
-                  <tr v-for="game in teamStats.games" :key="game.gameId"><td><b>{{ game.opponentName }}</b><small>{{ game.dateLabel }}</small></td><td><span class="ed-result" :class="game.result === 'won' ? 'is-won' : 'is-lost'">{{ game.result || 'Pending' }}</span></td><td>{{ game.onbase }}</td><td>{{ game.average }}</td><td>{{ game.ab }}</td><td>{{ game.h }}</td><td>{{ game.oneB }}</td><td>{{ game.twoB }}</td><td>{{ game.threeB }}</td><td>{{ game.hr }}</td><td>{{ game.rbi }}</td><td>{{ game.runs }}</td><td>{{ game.bb }}</td></tr>
+                  <tr v-for="game in visibleTeamGames" :key="game.gameId"><td><b>{{ game.opponentName }}</b><small>{{ game.dateLabel }}</small></td><td><span class="ed-result" :class="game.result === 'won' ? 'is-won' : 'is-lost'">{{ game.result || 'Pending' }}</span></td><td>{{ game.onbase }}</td><td>{{ game.average }}</td><td>{{ game.ab }}</td><td>{{ game.h }}</td><td>{{ game.oneB }}</td><td>{{ game.twoB }}</td><td>{{ game.threeB }}</td><td>{{ game.hr }}</td><td>{{ game.rbi }}</td><td>{{ game.runs }}</td><td>{{ game.bb }}</td></tr>
                 </tbody>
               </table>
             </div>
-            <div v-if="!teamStats.games.length" class="ed-empty ed-empty--inside"><h2>No team statistics yet</h2><p>Completed scoresheets will populate this event table.</p></div>
+            <div v-if="!visibleTeamGames.length" class="ed-empty ed-empty--inside"><h2>{{ teamStats.games.length ? 'No matching games' : 'No team statistics yet' }}</h2><p>{{ teamStats.games.length ? 'Reset or change the filters to see more games.' : 'Completed scoresheets will populate this event table.' }}</p></div>
           </section>
         </template>
       </section>
@@ -405,7 +511,7 @@ onMounted(async () => {
 .ed-boxscore-layout,.ed-player-grid{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(310px,.95fr);gap:16px}.ed-panel{min-width:0}.ed-panel-toolbar{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--ed-border)}.ed-segments{display:flex;gap:8px}.ed-segments button,.ed-rsvp button{border:1px solid var(--ed-border);background:#0b1727;color:var(--ed-text);padding:8px 22px;border-radius:7px;cursor:pointer}.ed-segments button.is-active,.ed-rsvp button.is-active{border-color:#5375ff;background:linear-gradient(100deg,#187dff,#8d28ed);box-shadow:0 0 14px rgba(91,74,255,.32)}.ed-count{color:var(--ed-muted);font-size:13px}
 .ed-games{display:grid;gap:10px;padding:12px}.ed-game{min-height:158px;display:grid;grid-template-columns:98px minmax(0,1fr) 40px;border:1px solid var(--ed-border);border-radius:8px;background:#0b1829;overflow:hidden}.ed-game.is-live{border-color:#356dea;box-shadow:inset 0 0 0 1px #7a32dd}.ed-game__date{border-right:1px solid var(--ed-border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px}.ed-game__date small{color:var(--ed-muted)}.ed-game__date b{font-size:17px;margin:5px 0 18px}.ed-game__body{padding:14px 20px;min-width:0}.ed-game__heading{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px}.ed-game__heading>b{font-size:16px}.ed-game__heading>small{color:var(--ed-muted)}.ed-status{font-size:11px;padding:4px 9px;border-radius:12px;border:1px solid var(--ed-border)}.ed-status.is-ongoing{color:#ffbe54;border-color:#855a21;background:#352616}.ed-status.is-final{color:#c4cfdf}.ed-status.is-scheduled{color:#54a8ff;border-color:#235e9d;background:#0a2948}.ed-matchup{display:grid;grid-template-columns:38px minmax(90px,1fr) 42px 1px 42px 38px minmax(90px,1fr);align-items:center;gap:10px;margin:18px 0}.ed-matchup strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ed-matchup>b{font-size:24px;text-align:center}.ed-matchup>i{height:28px;background:var(--ed-border)}.ed-team-mark,.ed-table-avatar,.ed-person__avatar{display:grid;place-items:center;border-radius:50%;background:#223959;color:#d9e9ff;font-weight:800}.ed-team-mark{width:36px;height:36px;font-size:11px}.ed-game__body>p{display:flex;align-items:center;gap:7px;margin:0;color:var(--ed-muted);font-size:12px}.ed-game>.ed-icon-btn{margin:12px 10px 0 0;width:32px;height:32px}
 .ed-side{display:grid;align-content:start;gap:12px}.ed-attendance,.ed-location{padding:18px}.ed-attendance__head,.ed-side-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.ed-attendance h2,.ed-side-title h2{margin:0;font-size:17px}.ed-rsvp{display:flex;gap:6px}.ed-rsvp button{padding:8px 12px}.ed-roster-tabs{display:flex;gap:20px;border-bottom:1px solid var(--ed-border);margin-top:16px}.ed-roster-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--ed-muted);padding:10px 0;cursor:pointer}.ed-roster-tabs button.is-active{color:#55a9ff;border-color:var(--ed-blue)}.ed-roster-tabs b{background:#142b49;border-radius:10px;padding:2px 6px}.ed-roster{display:grid;gap:8px;margin-top:12px}.ed-person{display:grid;grid-template-columns:36px 1fr 18px;align-items:center;gap:10px;min-height:43px}.ed-person img,.ed-person__avatar{width:36px;height:36px;object-fit:cover}.ed-person__avatar{font-size:11px}.ed-person span:nth-child(2){display:flex;flex-direction:column;min-width:0}.ed-person b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ed-person small{color:var(--ed-muted);font-size:11px;margin-top:3px}.ed-side-title>a{color:#44a2ff;font-size:12px}.ed-side-title>span{color:var(--ed-muted);font-size:12px}.ed-location>p{display:flex;align-items:flex-start;gap:8px;color:var(--ed-muted);font-size:13px}.ed-location iframe{width:100%;height:220px;border:0;border-radius:7px;margin-top:10px;filter:saturate(.75) brightness(.7) contrast(1.1)}.ed-map-empty{height:150px;margin-top:10px;border:1px dashed var(--ed-border);display:grid;place-content:center;justify-items:center;gap:8px;color:var(--ed-muted);font-size:12px}.ed-join-link{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:#126fd4;color:#fff;text-decoration:none;border-radius:7px;margin:15px 0}.ed-director{display:flex;flex-direction:column;border-top:1px solid var(--ed-border);padding-top:12px;margin-top:12px}.ed-director small{color:var(--ed-muted)}.ed-director a{color:#4ba7ff;font-size:12px;margin-top:3px}.ed-side-empty{color:var(--ed-muted);font-size:13px}
-.ed-stats-view{display:grid;gap:14px}.ed-stats-toolbar{min-height:58px;padding:10px 14px;display:flex;align-items:center;gap:12px}.ed-filter-block{min-width:160px;border-right:1px solid var(--ed-border);display:flex;flex-direction:column}.ed-filter-block small{color:var(--ed-muted)}.ed-filter-block b{font-size:13px;margin-top:3px}.ed-search{margin-left:auto;border:1px solid var(--ed-border);display:flex;align-items:center;gap:7px;padding:0 12px;height:38px;border-radius:7px;min-width:230px}.ed-search input{border:0;background:transparent;color:var(--ed-text);outline:none;width:100%}.ed-stats-toolbar select{height:38px;border:1px solid var(--ed-border);background:#0a1726;color:var(--ed-text);padding:0 12px;border-radius:7px}
+.ed-stats-view{display:grid;gap:14px}.ed-stats-toolbar{min-height:66px;padding:9px 12px;display:flex;align-items:center;gap:9px}.ed-select-control{height:48px;min-width:160px;border:1px solid var(--ed-border);background:#091625;border-radius:7px;padding:5px 10px;display:flex;flex-direction:column;justify-content:center}.ed-select-control>span{display:flex;align-items:center;gap:6px;color:var(--ed-muted)}.ed-select-control small{color:var(--ed-muted);font-size:10px}.ed-select-control select{width:100%;height:23px;border:0;background:transparent;color:var(--ed-text);font-weight:700;font-size:12px;outline:none;padding:0}.ed-select-control select option{background:#0b1728}.ed-select-control--wide{min-width:190px}.ed-toolbar-spacer{flex:1}.ed-search{border:1px solid var(--ed-border);display:flex;align-items:center;gap:7px;padding:0 12px;height:40px;border-radius:7px;min-width:220px;background:#091625}.ed-search input{border:0;background:transparent;color:var(--ed-text);outline:none;width:100%}.ed-square-btn,.ed-export-btn,.ed-reset-btn{height:40px;border:1px solid var(--ed-border);border-radius:7px;color:var(--ed-text);background:#0a1726;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}.ed-square-btn{width:40px}.ed-export-btn{padding:0 18px;background:linear-gradient(100deg,#187dff,#8d28ed);border-color:#5571ff;font-weight:700}.ed-reset-btn{padding:0 16px}.ed-reset-btn:hover,.ed-square-btn:hover{border-color:#3b8ee9;color:#56aaff}
 .ed-metrics{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:12px}.ed-metrics article{min-height:116px;padding:15px;display:flex;gap:12px;align-items:flex-start}.ed-metrics article>span{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#0d3c7d;color:#4ba2ff}.ed-metrics article.is-violet>span{background:#311b68;color:#b36dff}.ed-metrics article.is-green>span{background:#063f34;color:#23d893}.ed-metrics article.is-orange>span{background:#442515;color:#ff8b32}.ed-metrics article div{display:flex;flex-direction:column}.ed-metrics small,.ed-metrics p{color:var(--ed-muted);font-size:11px;margin:0}.ed-metrics b{font-size:22px;margin:5px 0}.ed-table-panel{padding:16px}.ed-table-scroll{overflow-x:auto;margin-top:12px;border:1px solid var(--ed-border);border-radius:7px}table{border-collapse:collapse;width:100%;min-width:820px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--ed-border);font-size:12px;white-space:nowrap}th{color:#b8c5d6;background:#0d1c2e;font-weight:700}td{color:#dfe7f2}td:first-child{display:flex;align-items:center;gap:9px}.ed-rank{color:var(--ed-muted);width:18px}.ed-table-avatar,td:first-child>img{width:34px;height:34px;object-fit:cover}.ed-table-avatar{font-size:10px}td:first-child>span:last-child{display:flex;flex-direction:column}td:first-child small{color:#459cff;margin-top:3px}.ed-top-list,.ed-chart-card{padding:16px}.ed-top-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;min-height:48px;border-bottom:1px solid var(--ed-border);font-size:12px}.ed-top-row>b{color:var(--ed-muted)}.ed-top-row strong{display:flex;flex-direction:column;text-align:right}.ed-top-row small{color:var(--ed-muted);font-weight:400}.ed-chart-card svg,.ed-performance svg{width:100%;height:auto;margin-top:12px;overflow:visible}.ed-chart-card polyline,.ed-performance polyline{fill:none;stroke-width:2}.line-blue{stroke:#2788ff}.line-violet{stroke:#9248ee}.ed-performance line{stroke:#1b2c40;stroke-width:1}.ed-legend{display:flex;justify-content:center;gap:20px;color:var(--ed-muted);font-size:11px}.ed-legend span,.ed-offense__legend span{display:flex;align-items:center;gap:6px}.ed-legend i,.ed-offense__legend i{width:9px;height:9px;border-radius:50%}.is-blue{background:#2688ff}.is-violet{background:#9149ee}.is-yellow{background:#f4b317}.is-green{background:#15bd78}
 .ed-team-insights{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(310px,.9fr);gap:14px}.ed-performance,.ed-offense{padding:18px}.ed-offense__body{display:flex;align-items:center;justify-content:center;gap:34px;padding:14px}.ed-donut{width:150px;aspect-ratio:1;border-radius:50%;display:grid;place-items:center}.ed-donut:before{content:"";grid-area:1/1;width:96px;aspect-ratio:1;background:#0b1728;border-radius:50%}.ed-donut span{grid-area:1/1;z-index:1;display:flex;flex-direction:column;align-items:center}.ed-donut b{font-size:22px}.ed-donut small{color:var(--ed-muted)}.ed-offense__legend{display:grid;gap:14px;font-size:12px}.ed-offense__legend b{margin-left:auto}.ed-team-table td:first-child{display:table-cell}.ed-team-table td:first-child b,.ed-team-table td:first-child small{display:block}.ed-team-table td:first-child small{color:var(--ed-muted);margin-top:3px}.ed-result{display:inline-block;text-transform:capitalize;padding:4px 12px;border-radius:12px}.ed-result.is-won{color:#23d893;background:#09362c}.ed-result.is-lost{color:#ff6370;background:#3b1821}
 .ed-empty,.ed-error{display:grid;place-items:center;text-align:center;min-height:300px;color:var(--ed-muted)}.ed-empty h2,.ed-error h2{color:var(--ed-text);margin:8px 0 0}.ed-empty p,.ed-error p{margin:6px 0 14px}.ed-empty button,.ed-error button{background:var(--ed-blue);border:0;color:white;padding:9px 18px;border-radius:7px}.ed-empty--inside{min-height:220px}.ed-tab-loading{display:grid;gap:10px}.ed-shimmer{display:block;background:linear-gradient(90deg,#0c1a2b,#192c43,#0c1a2b);background-size:200% 100%;animation:edShimmer 1.3s infinite}.ed-shimmer--avatar{width:78px;height:78px;border-radius:50%}.ed-shimmer--title{width:280px;height:30px;border-radius:6px}.ed-shimmer--row{height:120px;border-radius:8px}@keyframes edShimmer{to{background-position:-200% 0}}
@@ -413,4 +519,7 @@ onMounted(async () => {
 @media(max-width:1100px){.ed-metrics{grid-template-columns:repeat(3,1fr)}.ed-boxscore-layout,.ed-player-grid{grid-template-columns:minmax(0,1fr) 320px}.ed-team-insights{grid-template-columns:1fr}}
 @media(max-width:820px){.event-detail{padding:12px 12px 90px}.ed-hero{align-items:flex-start;padding:18px;flex-direction:column}.ed-identity{gap:12px}.ed-back{width:34px;height:34px}.ed-identity__copy h1{font-size:23px}.ed-record{width:100%;height:74px;grid-template-columns:repeat(3,1fr)}.ed-record span:first-child{border-left:0}.ed-boxscore-layout,.ed-player-grid{grid-template-columns:1fr}.ed-side{grid-template-columns:1fr}.ed-stats-toolbar{flex-wrap:wrap}.ed-search{margin-left:0;flex:1}.ed-metrics{grid-template-columns:repeat(2,1fr)}.ed-team-insights{grid-template-columns:1fr}.ed-game{grid-template-columns:78px minmax(0,1fr)}.ed-game>.ed-icon-btn{display:none}.ed-matchup{grid-template-columns:32px minmax(70px,1fr) 30px 1px 30px 32px minmax(70px,1fr);gap:6px}.ed-matchup strong{font-size:12px}.ed-attendance__head{align-items:flex-start;flex-direction:column}.ed-rsvp{width:100%}.ed-rsvp button{flex:1}.ed-offense__body{gap:20px}}
 @media(max-width:520px){.event-detail{padding-inline:8px}.ed-hero{padding:14px}.ed-identity{align-items:flex-start}.ed-identity>:deep(.team-avatar){flex:0 0 auto}.ed-identity__copy p{font-size:12px}.ed-tags{gap:5px}.ed-tabs{gap:0;padding:0}.ed-tabs button{padding:0 14px}.ed-panel-toolbar{align-items:flex-start;gap:10px;flex-direction:column}.ed-segments{width:100%}.ed-segments button{flex:1;padding:8px}.ed-game{grid-template-columns:1fr}.ed-game__date{border-right:0;border-bottom:1px solid var(--ed-border);display:grid;grid-template-columns:auto 1fr auto;gap:8px;text-align:left;justify-items:start}.ed-game__date b{font-size:13px;margin:0}.ed-game__body{padding:12px}.ed-game__heading{grid-template-columns:auto 1fr}.ed-game__heading>small{grid-column:2}.ed-matchup{grid-template-columns:30px minmax(60px,1fr) 24px 1px 24px 30px minmax(60px,1fr);margin:14px 0}.ed-matchup>b{font-size:19px}.ed-metrics{gap:8px}.ed-metrics article{min-height:108px;padding:12px;gap:8px}.ed-metrics article>span{width:32px;height:32px}.ed-metrics b{font-size:18px}.ed-filter-block{min-width:calc(50% - 6px)}.ed-search{min-width:100%}.ed-stats-toolbar select{width:100%}.ed-offense__body{flex-direction:column}.ed-side{grid-template-columns:minmax(0,1fr)}}
+table.is-compact th,table.is-compact td{padding-block:7px}
+@media(max-width:820px){.ed-stats-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}.ed-select-control,.ed-select-control--wide{min-width:0}.ed-toolbar-spacer{display:none}.ed-stats-toolbar--player .ed-search{grid-column:1/-1}.ed-stats-toolbar--player .ed-export-btn{grid-column:2}.ed-stats-toolbar--team .ed-reset-btn{grid-column:1/-1}.ed-search{margin-left:0;min-width:0}}
+@media(max-width:520px){.ed-stats-toolbar{grid-template-columns:1fr}.ed-stats-toolbar--player .ed-search,.ed-stats-toolbar--player .ed-export-btn,.ed-stats-toolbar--team .ed-reset-btn{grid-column:1}.ed-square-btn{width:100%}.ed-search{min-width:100%}}
 </style>
