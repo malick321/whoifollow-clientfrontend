@@ -314,8 +314,11 @@ const emit = defineEmits<{
 
 @media (max-width: 420px) {
   .product-card {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
     align-items: stretch;
+    width: 100%;
+    max-width: 100%;
     min-height: 128px;
     max-height: 148px;
     border-radius: 10px;
@@ -338,6 +341,8 @@ const emit = defineEmits<{
   }
 
   .product-card__body {
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     min-height: 128px;
     padding: 10px;
@@ -353,13 +358,22 @@ const emit = defineEmits<{
   }
 
   .product-card__cart-btn {
+    width: 100%;
+    max-width: 100%;
     min-height: 34px;
     padding: 6px 8px;
     font-size: 0.76rem;
+    overflow: hidden;
   }
+
+  .product-card__action { min-width: 0; }
 }
 
 @media (max-width: 340px) {
+  .product-card {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
   .product-card__media {
     width: 96px;
     flex-basis: 96px;

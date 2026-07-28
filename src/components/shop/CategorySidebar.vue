@@ -102,12 +102,19 @@ const emit = defineEmits<{
 
 @media (max-width: 860px) {
   .shop-categories {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
     padding: 12px;
   }
   .shop-categories__title {
     display: none;
   }
   .shop-categories__list {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
