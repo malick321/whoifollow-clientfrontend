@@ -275,10 +275,8 @@ const emit = defineEmits<{
     flex: 0 0 auto;
     width: 100%;
     min-height: 0;
-    /* Shorter ratio + hard cap so the image can't dominate the phone viewport.
-       Mirrors the detail modal's max-height cap (ProductDetailModal .product-detail__hero). */
-    aspect-ratio: 16 / 10;
-    max-height: 46vw;
+    aspect-ratio: 4 / 3;
+    max-height: 180px;
     border-right: 0;
     border-bottom: 1px solid var(--border-divider);
   }
@@ -316,17 +314,34 @@ const emit = defineEmits<{
 
 @media (max-width: 420px) {
   .product-card {
-    min-height: 0;
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 128px;
+    max-height: 148px;
+    border-radius: 10px;
   }
 
   .product-card__media {
-    width: 100%;
-    min-height: 0;
+    width: 112px;
+    height: auto;
+    min-height: 128px;
+    max-height: 148px;
+    flex: 0 0 112px;
+    aspect-ratio: auto;
+    border-right: 1px solid var(--border-divider);
+    border-bottom: 0;
+  }
+
+  .product-card__img {
+    padding: 5px;
+    object-fit: contain;
   }
 
   .product-card__body {
-    min-height: 110px;
-    padding: 9px;
+    min-width: 0;
+    min-height: 128px;
+    padding: 10px;
+    gap: 5px;
   }
 
   .product-card__name {
@@ -336,11 +351,18 @@ const emit = defineEmits<{
   .product-card__price {
     font-size: 0.9rem;
   }
+
+  .product-card__cart-btn {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 0.76rem;
+  }
 }
 
 @media (max-width: 340px) {
   .product-card__media {
-    width: 100%;
+    width: 96px;
+    flex-basis: 96px;
   }
 
   .product-card__cart-btn {

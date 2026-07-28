@@ -517,7 +517,7 @@ watch(nextCursor, async () => {
   }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 480px) {
   .shop-view__grid {
     grid-template-columns: minmax(0, 1fr) !important;
     gap: 10px;
