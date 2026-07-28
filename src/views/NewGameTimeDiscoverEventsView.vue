@@ -20,7 +20,7 @@
 //   - Per-card weather via the shared `fetchWeatherForDates` client +
 //     WeatherWidget for events inside the near-term window.
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '../components/AppIcon.vue'
 import MultiSelectDropdown from '../components/MultiSelectDropdown.vue'
 import {
@@ -88,7 +88,16 @@ const yearOptionLabels = computed<string[]>(() => {
   return years.map((y) => String(y))
 })
 
+const hasActiveFilters = computed(() =>
+  search.value.trim().length > 0 ||
+  yearFilter.value !== currentYear ||
+  pastEventsFilter.value ||
+  associationFilter.value.length > 0 ||
+  stateFilter.value.length > 0
+)
+
 let fetchToken = 0
+let resettingFilters = false
 
 async function loadPage(mode: 'reset' | 'append') {
   const myToken = ++fetchToken
@@ -132,6 +141,7 @@ async function loadPage(mode: 'reset' | 'append') {
 const SEARCH_DEBOUNCE_MS = 500
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(search, () => {
+  if (resettingFilters) return
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
   searchDebounceTimer = setTimeout(() => {
     searchDebounceTimer = null
@@ -146,12 +156,30 @@ watch(yearFilter, (year) => {
 })
 
 watch([yearFilter, pastEventsFilter, associationFilter, stateFilter], () => {
+  if (resettingFilters) return
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer)
     searchDebounceTimer = null
   }
   loadPage('reset')
 })
+
+async function resetFilters() {
+  if (!hasActiveFilters.value) return
+  resettingFilters = true
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
+  search.value = ''
+  yearFilter.value = currentYear
+  pastEventsFilter.value = false
+  associationFilter.value = []
+  stateFilter.value = []
+  await nextTick()
+  resettingFilters = false
+  await loadPage('reset')
+}
 
 // Continuous scroll.
 const loadMoreSentinelRef = ref<HTMLElement | null>(null)
@@ -345,6 +373,16 @@ onBeforeUnmount(() => {
               :aria-checked="pastEventsFilter ? 'true' : 'false'"
               @click="pastEventsFilter = !pastEventsFilter"
             >Past Events</button>
+            <button
+              type="button"
+              class="ngt-reset-filters"
+              :disabled="!hasActiveFilters"
+              aria-label="Reset all event filters"
+              @click="resetFilters"
+            >
+              <AppIcon name="close" :size="14" />
+              <span>Reset filters</span>
+            </button>
           </div>
           <NgtViewToggle />
         </div>
@@ -681,5 +719,75 @@ onBeforeUnmount(() => {
 .association-events__past-toggle--on {
   background: var(--primary-light-3); border-color: var(--primary-light-2); color: var(--text);
 }
+.ngt-reset-filters {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-divider);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ngt-reset-filters:hover {
+  border-color: var(--primary-light-2);
+  color: var(--primary);
+  background: var(--primary-light-3);
+}
+.ngt-reset-filters:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
 .association-events__skeleton-hero { width: 80px; height: 80px; border-radius: 12px; }
+
+@media (max-width: 720px) {
+  .association-users__header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .association-teams__header-actions,
+  .association-users__search {
+    width: 100%;
+  }
+  .association-teams__toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .association-teams__filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
+  }
+  .association-teams__filters :deep(.multi-select),
+  .association-teams__filters :deep(.multi-select__trigger),
+  .association-events__past-toggle,
+  .ngt-reset-filters {
+    width: 100%;
+    min-width: 0;
+  }
+  .ngt-cards {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .association-teams__toolbar :deep(.ngt-view-toggle) {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .association-teams__filters {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

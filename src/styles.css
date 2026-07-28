@@ -7743,9 +7743,23 @@ html.dark-mode .map-explorer__wizard .toggle-switch--on .toggle-switch__track {
   color: #ffffff;
 }
 
+.number-stepper__minus-mark {
+  width: 11px;
+  height: 2px;
+  display: block;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .number-stepper__btn:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.62;
+}
+
+.number-stepper__btn--minus:disabled {
+  color: var(--secondary);
+  border-color: var(--border-divider);
+  background: var(--surface-pill);
 }
 
 .number-stepper__value {

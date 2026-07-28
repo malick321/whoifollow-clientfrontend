@@ -50,7 +50,7 @@ function step(delta: number) {
       :disabled="disabled || modelValue <= min"
       aria-label="Decrease"
       @click="step(-1)"
-    >−</button>
+    ><span class="number-stepper__minus-mark" aria-hidden="true"></span></button>
     <span class="number-stepper__value" aria-live="polite">{{ modelValue }}</span>
     <button
       type="button"
