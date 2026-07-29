@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/AppIcon.vue'
 import TeamAvatar from '../components/TeamAvatar.vue'
+import CreateGameModal from '../components/CreateGameModal.vue'
 import { pushToast } from '../toast-center'
 import {
   fetchEventBoxscores,
@@ -40,6 +41,7 @@ const loadingOverview = ref(true)
 const loadingTab = ref(false)
 const loadError = ref('')
 const attendanceSaving = ref(false)
+const gameFormOpen = ref(false)
 const gameStatus = ref<'all' | EventBoxscore['status']>('all')
 const playerSearch = ref('')
 const playerSort = ref<'onbase' | 'average' | 'games' | 'hr' | 'rbi'>('onbase')
@@ -235,6 +237,39 @@ async function setAttendance(status: Exclude<EventAttendanceStatus, 'not_respond
   }
 }
 
+// Attendee row ⋯ menu (one open at a time; closes on outside click).
+const openMemberMenu = ref<string | null>(null)
+function toggleMemberMenu(id: string) {
+  openMemberMenu.value = openMemberMenu.value === id ? null : id
+}
+function closeMemberMenu() { openMemberMenu.value = null }
+function onDocumentClick() { closeMemberMenu() }
+
+function viewMemberStats(userId: string) {
+  closeMemberMenu()
+  if (userId) router.push({ name: 'player-passport', params: { playerId: userId } })
+}
+
+async function setMemberAttendance(memberId: string, status: Exclude<EventAttendanceStatus, 'not_responded'>) {
+  closeMemberMenu()
+  if (!overview.value || attendanceSaving.value) return
+  attendanceSaving.value = true
+  try {
+    overview.value.attendance = await updateEventAttendance(teamId.value, eventId.value, status, memberId)
+    pushToast({ tone: 'success', title: 'Attendance updated' })
+  } catch (error) {
+    pushToast({ tone: 'warning', title: 'Could not update attendance', message: error instanceof Error ? error.message : 'Please try again.' })
+  } finally {
+    attendanceSaving.value = false
+  }
+}
+
+async function onGameCreated() {
+  // Refresh the boxscores list + the Games/Won/Lost record.
+  overview.value = await fetchTeamEventOverview(teamId.value, eventId.value).catch(() => overview.value)
+  if (activeTab.value === 'boxscores') void loadActiveTab()
+}
+
 watch(() => route.query.tab, (value) => {
   if (TABS.some((tab) => tab.key === value) && value !== activeTab.value) {
     activeTab.value = value as TabKey
@@ -243,6 +278,7 @@ watch(() => route.query.tab, (value) => {
 })
 
 onMounted(async () => {
+  document.addEventListener('click', onDocumentClick)
   const requested = String(route.query.tab ?? '')
   if (TABS.some((tab) => tab.key === requested)) activeTab.value = requested as TabKey
   try {
@@ -254,6 +290,8 @@ onMounted(async () => {
   }
   void loadActiveTab()
 })
+
+onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>
@@ -315,6 +353,9 @@ onMounted(async () => {
               </button>
             </div>
             <span class="ed-count">{{ visibleGames.length }} games</span>
+            <button v-if="overview?.isAdmin" type="button" class="ed-add-game" @click="gameFormOpen = true">
+              <AppIcon name="game" :size="15" /><span>Add Game</span>
+            </button>
           </div>
           <div v-if="visibleGames.length" class="ed-games">
             <article v-for="game in visibleGames" :key="game.id" class="ed-game" :class="{ 'is-live': game.status === 'ongoing' }">
@@ -343,7 +384,12 @@ onMounted(async () => {
               <button type="button" class="ed-icon-btn" title="Game options" aria-label="Game options"><AppIcon name="ellipsis" :size="18" /></button>
             </article>
           </div>
-          <div v-else class="ed-empty ed-empty--inside"><AppIcon name="game" :size="34" /><h2>No games here yet</h2><p>Games added to this event will appear in this boxscore list.</p></div>
+          <div v-else class="ed-empty ed-empty--inside">
+            <AppIcon name="game" :size="34" /><h2>No games here yet</h2><p>Games added to this event will appear in this boxscore list.</p>
+            <button v-if="overview?.isAdmin" type="button" class="ed-add-game ed-add-game--cta" @click="gameFormOpen = true">
+              <AppIcon name="game" :size="15" /><span>Add Game</span>
+            </button>
+          </div>
         </section>
 
         <aside class="ed-side">
@@ -365,7 +411,24 @@ onMounted(async () => {
                 <span v-if="!member.avatarUrl" class="ed-person__avatar">{{ initials(member.name) }}</span>
                 <img v-else :src="member.avatarUrl" :alt="member.name" />
                 <span><b>{{ member.name }}</b><small>{{ member.uniformNo ? `#${member.uniformNo} · ` : '' }}{{ member.role }}</small></span>
-                <AppIcon name="ellipsis" :size="17" />
+                <div class="ed-person__menu" @click.stop>
+                  <button
+                    type="button"
+                    class="ed-person__more"
+                    :aria-expanded="openMemberMenu === member.userId"
+                    aria-label="Member options"
+                    @click="toggleMemberMenu(member.userId)"
+                  ><AppIcon name="ellipsis" :size="17" /></button>
+                  <ul v-if="openMemberMenu === member.userId" class="ed-menu">
+                    <li><button type="button" @click="viewMemberStats(member.userId)">View Player Stats</button></li>
+                    <template v-if="overview.isAdmin">
+                      <li class="ed-menu__label">Set attendance</li>
+                      <li><button type="button" @click="setMemberAttendance(member.userId, 'going')">Going</button></li>
+                      <li><button type="button" @click="setMemberAttendance(member.userId, 'not_going')">Not Going</button></li>
+                      <li><button type="button" @click="setMemberAttendance(member.userId, 'maybe')">Maybe</button></li>
+                    </template>
+                  </ul>
+                </div>
               </div>
               <p v-if="!attendanceMembers.length" class="ed-side-empty">No members in this group.</p>
             </div>
@@ -498,6 +561,14 @@ onMounted(async () => {
         </template>
       </section>
     </template>
+
+    <CreateGameModal
+      v-if="overview"
+      v-model="gameFormOpen"
+      :team-id="teamId"
+      :event-id="eventId"
+      @saved="onGameCreated"
+    />
   </main>
 </template>
 
@@ -511,6 +582,21 @@ onMounted(async () => {
 .ed-boxscore-layout,.ed-player-grid{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(310px,.95fr);gap:16px}.ed-panel{min-width:0}.ed-panel-toolbar{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--ed-border)}.ed-segments{display:flex;gap:8px}.ed-segments button,.ed-rsvp button{border:1px solid var(--ed-border);background:#0b1727;color:var(--ed-text);padding:8px 22px;border-radius:7px;cursor:pointer}.ed-segments button.is-active,.ed-rsvp button.is-active{border-color:#5375ff;background:linear-gradient(100deg,#187dff,#8d28ed);box-shadow:0 0 14px rgba(91,74,255,.32)}.ed-count{color:var(--ed-muted);font-size:13px}
 .ed-games{display:grid;gap:10px;padding:12px}.ed-game{min-height:158px;display:grid;grid-template-columns:98px minmax(0,1fr) 40px;border:1px solid var(--ed-border);border-radius:8px;background:#0b1829;overflow:hidden}.ed-game.is-live{border-color:#356dea;box-shadow:inset 0 0 0 1px #7a32dd}.ed-game__date{border-right:1px solid var(--ed-border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px}.ed-game__date small{color:var(--ed-muted)}.ed-game__date b{font-size:17px;margin:5px 0 18px}.ed-game__body{padding:14px 20px;min-width:0}.ed-game__heading{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px}.ed-game__heading>b{font-size:16px}.ed-game__heading>small{color:var(--ed-muted)}.ed-status{font-size:11px;padding:4px 9px;border-radius:12px;border:1px solid var(--ed-border)}.ed-status.is-ongoing{color:#ffbe54;border-color:#855a21;background:#352616}.ed-status.is-final{color:#c4cfdf}.ed-status.is-scheduled{color:#54a8ff;border-color:#235e9d;background:#0a2948}.ed-matchup{display:grid;grid-template-columns:38px minmax(90px,1fr) 42px 1px 42px 38px minmax(90px,1fr);align-items:center;gap:10px;margin:18px 0}.ed-matchup strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ed-matchup>b{font-size:24px;text-align:center}.ed-matchup>i{height:28px;background:var(--ed-border)}.ed-team-mark,.ed-table-avatar,.ed-person__avatar{display:grid;place-items:center;border-radius:50%;background:#223959;color:#d9e9ff;font-weight:800}.ed-team-mark{width:36px;height:36px;font-size:11px}.ed-game__body>p{display:flex;align-items:center;gap:7px;margin:0;color:var(--ed-muted);font-size:12px}.ed-game>.ed-icon-btn{margin:12px 10px 0 0;width:32px;height:32px}
 .ed-side{display:grid;align-content:start;gap:12px}.ed-attendance,.ed-location{padding:18px}.ed-attendance__head,.ed-side-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.ed-attendance h2,.ed-side-title h2{margin:0;font-size:17px}.ed-rsvp{display:flex;gap:6px}.ed-rsvp button{padding:8px 12px}.ed-roster-tabs{display:flex;gap:20px;border-bottom:1px solid var(--ed-border);margin-top:16px}.ed-roster-tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--ed-muted);padding:10px 0;cursor:pointer}.ed-roster-tabs button.is-active{color:#55a9ff;border-color:var(--ed-blue)}.ed-roster-tabs b{background:#142b49;border-radius:10px;padding:2px 6px}.ed-roster{display:grid;gap:8px;margin-top:12px}.ed-person{display:grid;grid-template-columns:36px 1fr 18px;align-items:center;gap:10px;min-height:43px}.ed-person img,.ed-person__avatar{width:36px;height:36px;object-fit:cover}.ed-person__avatar{font-size:11px}.ed-person span:nth-child(2){display:flex;flex-direction:column;min-width:0}.ed-person b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ed-person small{color:var(--ed-muted);font-size:11px;margin-top:3px}.ed-side-title>a{color:#44a2ff;font-size:12px}.ed-side-title>span{color:var(--ed-muted);font-size:12px}.ed-location>p{display:flex;align-items:flex-start;gap:8px;color:var(--ed-muted);font-size:13px}.ed-location iframe{width:100%;height:220px;border:0;border-radius:7px;margin-top:10px;filter:saturate(.75) brightness(.7) contrast(1.1)}.ed-map-empty{height:150px;margin-top:10px;border:1px dashed var(--ed-border);display:grid;place-content:center;justify-items:center;gap:8px;color:var(--ed-muted);font-size:12px}.ed-join-link{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:#126fd4;color:#fff;text-decoration:none;border-radius:7px;margin:15px 0}.ed-director{display:flex;flex-direction:column;border-top:1px solid var(--ed-border);padding-top:12px;margin-top:12px}.ed-director small{color:var(--ed-muted)}.ed-director a{color:#4ba7ff;font-size:12px;margin-top:3px}.ed-side-empty{color:var(--ed-muted);font-size:13px}
+/* Add Game button (games panel toolbar + empty-state CTA). */
+.ed-panel-toolbar{display:flex;align-items:center;gap:12px}
+.ed-add-game{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid #235e9d;border-radius:7px;background:#126fd4;color:#fff;font-size:13px;font-weight:500;cursor:pointer}
+.ed-add-game:hover{filter:brightness(1.06)}
+.ed-add-game--cta{margin:14px 0 0}
+/* Attendee row ⋯ menu (matches the page's ed- dark idiom). */
+.ed-person{grid-template-columns:36px 1fr auto}
+.ed-person__menu{position:relative}
+.ed-person__more{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:0;background:none;color:var(--ed-muted);border-radius:6px;cursor:pointer}
+.ed-person__more:hover,.ed-person__more[aria-expanded=true]{background:#142b49;color:#cfe0f5}
+.ed-menu{position:absolute;top:28px;right:0;z-index:20;min-width:172px;margin:0;padding:6px;list-style:none;background:#0d1c31;border:1px solid var(--ed-border);border-radius:9px;box-shadow:0 12px 28px rgba(0,0,0,.45)}
+.ed-menu li{list-style:none}
+.ed-menu__label{padding:6px 10px 2px;color:var(--ed-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.ed-menu button{width:100%;text-align:left;border:0;background:none;color:#dce8f7;font-size:13px;padding:8px 10px;border-radius:6px;cursor:pointer}
+.ed-menu button:hover{background:#142b49}
 .ed-stats-view{display:grid;gap:14px}.ed-stats-toolbar{min-height:66px;padding:9px 12px;display:flex;align-items:center;gap:9px}.ed-select-control{height:48px;min-width:160px;border:1px solid var(--ed-border);background:#091625;border-radius:7px;padding:5px 10px;display:flex;flex-direction:column;justify-content:center}.ed-select-control>span{display:flex;align-items:center;gap:6px;color:var(--ed-muted)}.ed-select-control small{color:var(--ed-muted);font-size:10px}.ed-select-control select{width:100%;height:23px;border:0;background:transparent;color:var(--ed-text);font-weight:700;font-size:12px;outline:none;padding:0}.ed-select-control select option{background:#0b1728}.ed-select-control--wide{min-width:190px}.ed-toolbar-spacer{flex:1}.ed-search{border:1px solid var(--ed-border);display:flex;align-items:center;gap:7px;padding:0 12px;height:40px;border-radius:7px;min-width:220px;background:#091625}.ed-search input{border:0;background:transparent;color:var(--ed-text);outline:none;width:100%}.ed-square-btn,.ed-export-btn,.ed-reset-btn{height:40px;border:1px solid var(--ed-border);border-radius:7px;color:var(--ed-text);background:#0a1726;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}.ed-square-btn{width:40px}.ed-export-btn{padding:0 18px;background:linear-gradient(100deg,#187dff,#8d28ed);border-color:#5571ff;font-weight:700}.ed-reset-btn{padding:0 16px}.ed-reset-btn:hover,.ed-square-btn:hover{border-color:#3b8ee9;color:#56aaff}
 .ed-metrics{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:12px}.ed-metrics article{min-height:116px;padding:15px;display:flex;gap:12px;align-items:flex-start}.ed-metrics article>span{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#0d3c7d;color:#4ba2ff}.ed-metrics article.is-violet>span{background:#311b68;color:#b36dff}.ed-metrics article.is-green>span{background:#063f34;color:#23d893}.ed-metrics article.is-orange>span{background:#442515;color:#ff8b32}.ed-metrics article div{display:flex;flex-direction:column}.ed-metrics small,.ed-metrics p{color:var(--ed-muted);font-size:11px;margin:0}.ed-metrics b{font-size:22px;margin:5px 0}.ed-table-panel{padding:16px}.ed-table-scroll{overflow-x:auto;margin-top:12px;border:1px solid var(--ed-border);border-radius:7px}table{border-collapse:collapse;width:100%;min-width:820px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--ed-border);font-size:12px;white-space:nowrap}th{color:#b8c5d6;background:#0d1c2e;font-weight:700}td{color:#dfe7f2}td:first-child{display:flex;align-items:center;gap:9px}.ed-rank{color:var(--ed-muted);width:18px}.ed-table-avatar,td:first-child>img{width:34px;height:34px;object-fit:cover}.ed-table-avatar{font-size:10px}td:first-child>span:last-child{display:flex;flex-direction:column}td:first-child small{color:#459cff;margin-top:3px}.ed-top-list,.ed-chart-card{padding:16px}.ed-top-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;min-height:48px;border-bottom:1px solid var(--ed-border);font-size:12px}.ed-top-row>b{color:var(--ed-muted)}.ed-top-row strong{display:flex;flex-direction:column;text-align:right}.ed-top-row small{color:var(--ed-muted);font-weight:400}.ed-chart-card svg,.ed-performance svg{width:100%;height:auto;margin-top:12px;overflow:visible}.ed-chart-card polyline,.ed-performance polyline{fill:none;stroke-width:2}.line-blue{stroke:#2788ff}.line-violet{stroke:#9248ee}.ed-performance line{stroke:#1b2c40;stroke-width:1}.ed-legend{display:flex;justify-content:center;gap:20px;color:var(--ed-muted);font-size:11px}.ed-legend span,.ed-offense__legend span{display:flex;align-items:center;gap:6px}.ed-legend i,.ed-offense__legend i{width:9px;height:9px;border-radius:50%}.is-blue{background:#2688ff}.is-violet{background:#9149ee}.is-yellow{background:#f4b317}.is-green{background:#15bd78}
 .ed-team-insights{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(310px,.9fr);gap:14px}.ed-performance,.ed-offense{padding:18px}.ed-offense__body{display:flex;align-items:center;justify-content:center;gap:34px;padding:14px}.ed-donut{width:150px;aspect-ratio:1;border-radius:50%;display:grid;place-items:center}.ed-donut:before{content:"";grid-area:1/1;width:96px;aspect-ratio:1;background:#0b1728;border-radius:50%}.ed-donut span{grid-area:1/1;z-index:1;display:flex;flex-direction:column;align-items:center}.ed-donut b{font-size:22px}.ed-donut small{color:var(--ed-muted)}.ed-offense__legend{display:grid;gap:14px;font-size:12px}.ed-offense__legend b{margin-left:auto}.ed-team-table td:first-child{display:table-cell}.ed-team-table td:first-child b,.ed-team-table td:first-child small{display:block}.ed-team-table td:first-child small{color:var(--ed-muted);margin-top:3px}.ed-result{display:inline-block;text-transform:capitalize;padding:4px 12px;border-radius:12px}.ed-result.is-won{color:#23d893;background:#09362c}.ed-result.is-lost{color:#ff6370;background:#3b1821}

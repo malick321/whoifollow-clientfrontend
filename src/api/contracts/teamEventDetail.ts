@@ -24,6 +24,8 @@ export interface TeamEventOverview {
   id: string
   name: string
   avatarUrl: string | null
+  /** True when the current user is a team admin (gates admin-only actions). */
+  isAdmin: boolean
   eventType: string | null
   association: string | null
   dates: {

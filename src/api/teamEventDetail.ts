@@ -58,11 +58,15 @@ export async function fetchEventTeamStats(teamId: string, eventId: string): Prom
 export async function updateEventAttendance(
   teamId: string,
   eventId: string,
-  status: Exclude<EventAttendanceStatus, 'not_responded'>
+  status: Exclude<EventAttendanceStatus, 'not_responded'>,
+  memberId?: string
 ): Promise<TeamEventAttendance> {
+  // `memberId` (admin only) sets ANOTHER member's status; omit for self RSVP.
+  const body: Record<string, string> = { status }
+  if (memberId) body.memberId = memberId
   const data = await request<{ attendance: TeamEventAttendance }>(eventPath(teamId, eventId, 'attendance'), {
     method: 'PATCH',
-    body: JSON.stringify({ status })
+    body: JSON.stringify(body)
   })
   return data.attendance
 }

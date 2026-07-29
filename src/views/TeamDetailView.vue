@@ -214,6 +214,23 @@ const filterYearArr = selectAdapter(filterYear)
 const filterTypeArr = selectAdapter(filterType)
 const filterAssocArr = selectAdapter(filterAssoc)
 const filterStateArr = selectAdapter(filterState)
+
+// Stats-tab filter adapters. Type/Association store the label (value == label).
+// Event stores an id but must DISPLAY the event name — map both ways.
+const statTypeArr = selectAdapter(statType)
+const statAssocArr = selectAdapter(statAssoc)
+const eventNameOptions = computed(() => events.value.map((e) => e.name))
+const statEventArr = computed<string[]>({
+  get: () => {
+    if (statEvent.value === 'all') return []
+    const hit = events.value.find((e) => e.id === statEvent.value)
+    return hit ? [hit.name] : []
+  },
+  set: (v) => {
+    const hit = v[0] ? events.value.find((e) => e.name === v[0]) : null
+    statEvent.value = hit ? hit.id : 'all'
+  }
+})
 const statFilterPayload = computed<TeamStatsFilters>(() => ({
   eventId: statEvent.value,
   eventType: statType.value,
@@ -1065,19 +1082,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       <!-- Player Statistics -->
       <template v-else-if="activeTab === 'player-stats'">
         <div class="td-stats-toolbar">
-        <div v-if="events.length" class="td-filter td-filter--wrap">
-          <select v-model="statEvent" class="td-select" aria-label="Event">
-            <option value="all">Event</option>
-            <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
-          </select>
-          <select v-model="statType" class="td-select" aria-label="Type">
-            <option value="all">Type</option>
-            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <select v-model="statAssoc" class="td-select" aria-label="Association">
-            <option value="all">Association</option>
-            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
-          </select>
+        <div v-if="events.length" class="association-teams__filters td-stats-filters">
+          <MultiSelectDropdown v-model="statEventArr" :options="eventNameOptions" placeholder="Event" single :searchable="false" aria-label="Event" />
+          <MultiSelectDropdown v-model="statTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
+          <MultiSelectDropdown v-model="statAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
         </div>
           <label class="td-search-wrap td-search-wrap--stats">
             <AppIcon name="search" :size="15" />
@@ -1151,21 +1159,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
       <template v-else-if="activeTab === 'team-stats'">
         <div class="td-stats-toolbar">
-        <div v-if="events.length" class="td-filter td-filter--wrap">
-          <select v-model="statEvent" class="td-select" aria-label="Event">
-            <option value="all">Event</option>
-            <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
-          </select>
-          <select v-model="statType" class="td-select" aria-label="Type">
-            <option value="all">Type</option>
-            <option v-for="t in eventTypes" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <select v-model="statAssoc" class="td-select" aria-label="Association">
-            <option value="all">Association</option>
-            <option v-for="a in eventAssocs" :key="a" :value="a">{{ a }}</option>
-          </select>
+        <div v-if="events.length" class="association-teams__filters td-stats-filters">
+          <MultiSelectDropdown v-model="statEventArr" :options="eventNameOptions" placeholder="Event" single :searchable="false" aria-label="Event" />
+          <MultiSelectDropdown v-model="statTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
+          <MultiSelectDropdown v-model="statAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
         </div>
-          <select class="td-select" aria-label="Time range"><option>All Time</option></select>
         </div>
         <div class="td-metric-grid">
           <article v-for="metric in teamMetricCards" :key="metric.label" class="td-metric-card" :class="`is-${metric.tone}`">
@@ -1527,8 +1525,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   margin-bottom: 14px;
 }
 .td-filter--split { justify-content: space-between; }
-/* Events filter row — colleague's MultiSelectDropdown pills; wrap on mobile. */
-.td-events-filters { margin: 0 0 14px; flex-wrap: wrap; }
+/* Events + stats filter rows — colleague's MultiSelectDropdown pills; wrap on mobile. */
+.td-events-filters,
+.td-stats-filters { margin: 0 0 14px; flex-wrap: wrap; }
 .association-events__past-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.72;
@@ -1552,8 +1551,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   color: var(--primary);
 }
 @media (max-width: 720px) {
-  .td-events-filters { gap: 8px; }
-  .td-events-filters > * { flex: 1 1 calc(50% - 8px); }
+  .td-events-filters, .td-stats-filters { gap: 8px; }
+  .td-events-filters > *, .td-stats-filters > * { flex: 1 1 calc(50% - 8px); }
 }
 .td-filter--wrap { flex-wrap: wrap; }
 .td-select {
