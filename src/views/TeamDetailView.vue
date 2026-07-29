@@ -1528,6 +1528,30 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 /* Events + stats filter rows — colleague's MultiSelectDropdown pills; wrap on mobile. */
 .td-events-filters,
 .td-stats-filters { margin: 0 0 14px; flex-wrap: wrap; }
+/* "Past Events" toggle — match the MultiSelectDropdown pill triggers
+   (same height/border/radius); active = solid primary (no gradient). */
+.association-events__past-toggle {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-divider);
+  border-radius: 5px;
+  background: var(--surface-btn-solid);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.association-events__past-toggle:hover:not(.association-events__past-toggle--on) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.association-events__past-toggle--on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
 .association-events__past-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.72;
