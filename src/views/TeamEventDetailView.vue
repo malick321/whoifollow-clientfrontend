@@ -262,7 +262,7 @@ function onDocumentClick() { closeMemberMenu(); openGameMenu.value = null }
 
 function openScoring(game: EventBoxscore) {
   openGameMenu.value = null
-  router.push({ name: 'game-scoring', params: { teamId: teamId.value, eventId: eventId.value, gameGuid: game.guid || game.id } })
+  router.push({ name: 'game-scoring', params: { teamId: teamId.value, eventId: eventId.value, gameId: game.id } })
 }
 function editGame(game: EventBoxscore) {
   openGameMenu.value = null

@@ -128,7 +128,7 @@ const router = createRouter({
     // Team detail page (4 tabs) — opened from the chat team info panel.
     { path: '/team/:teamId', name: 'team-detail', component: TeamDetailView },
     { path: '/team/:teamId/events/:eventId', name: 'team-event-detail', component: TeamEventDetailView },
-    { path: '/team/:teamId/events/:eventId/games/:gameGuid/score', name: 'game-scoring', component: GameScoringView },
+    { path: '/team/:teamId/events/:eventId/games/:gameId/score', name: 'game-scoring', component: GameScoringView },
     // My Life Book — digital photo-book builder (members; shared flipbook is public)
     { path: '/lifebook', name: 'lifebook', component: LifeBookListView },
     { path: '/lifebook/:guid/edit', name: 'lifebook-editor', component: LifeBookEditorView },
