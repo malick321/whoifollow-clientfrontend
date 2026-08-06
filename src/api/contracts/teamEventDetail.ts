@@ -64,6 +64,17 @@ export interface EventBoxscore {
   venue: string | null
   team: { name: string; score: number; logoUrl: string | null }
   opponent: { name: string; score: number }
+  // Raw editable fields for the Edit Game modal prefill.
+  edit?: {
+    name: string | null
+    opponentName: string | null
+    opponentCountry: string | null
+    opponentState: string | null
+    opponentCity: string | null
+    startDate: string | null
+    startTime: string | null
+    note: string | null
+  }
 }
 
 export interface EventBattingStats {

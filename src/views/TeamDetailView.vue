@@ -681,9 +681,15 @@ watch(
   }
 )
 
+// Condensed sticky header (matches ParticipationV2 — visible after 140px scroll).
+const condensedHeaderVisible = ref(false)
+function handleScroll() { condensedHeaderVisible.value = window.scrollY > 140 }
+
 onMounted(async () => {
   const q = String(route.query.tab ?? '')
   if (TABS.some((t) => t.key === q)) activeTab.value = q as TabKey
+  handleScroll()
+  window.addEventListener('scroll', handleScroll, { passive: true })
 
   // Header (identity + record) + association in parallel with the first tab.
   const [d, a] = await Promise.all([
@@ -699,11 +705,28 @@ onMounted(async () => {
   document.addEventListener('click', onDocumentClick)
 })
 
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('scroll', handleScroll)
+})
 </script>
 
 <template>
   <main class="team-detail">
+    <section
+      v-if="detail"
+      class="condensed-team-header team-detail__condensed"
+      :class="{ 'condensed-team-header--visible': condensedHeaderVisible }"
+    >
+      <div class="condensed-team-header__main">
+        <div class="condensed-team-header__top">
+          <TeamAvatar :name="detail.name" :image-url="detail.logoUrl ?? undefined" size="md" />
+          <span class="condensed-team-header__name">{{ detail.name }}</span>
+        </div>
+        <div class="condensed-team-header__subline">{{ [detail.ageGenderLabel, detail.categoryLabel].filter(Boolean).join(' · ') }}</div>
+      </div>
+    </section>
+
     <section class="team-detail__hero">
       <div class="team-detail__identity">
         <div class="team-heading">

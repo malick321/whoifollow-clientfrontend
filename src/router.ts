@@ -33,6 +33,7 @@ import LoginView from './views/LoginView.vue'
 import ChatView from './views/ChatView.vue'
 import TeamDetailView from './views/TeamDetailView.vue'
 import TeamEventDetailView from './views/TeamEventDetailView.vue'
+import GameScoringView from './views/GameScoringView.vue'
 import LifeBookListView from './views/LifeBookListView.vue'
 import LifeBookEditorView from './views/LifeBookEditorView.vue'
 import LifeBookSharedView from './views/LifeBookSharedView.vue'
@@ -127,6 +128,7 @@ const router = createRouter({
     // Team detail page (4 tabs) — opened from the chat team info panel.
     { path: '/team/:teamId', name: 'team-detail', component: TeamDetailView },
     { path: '/team/:teamId/events/:eventId', name: 'team-event-detail', component: TeamEventDetailView },
+    { path: '/team/:teamId/events/:eventId/games/:gameGuid/score', name: 'game-scoring', component: GameScoringView },
     // My Life Book — digital photo-book builder (members; shared flipbook is public)
     { path: '/lifebook', name: 'lifebook', component: LifeBookListView },
     { path: '/lifebook/:guid/edit', name: 'lifebook-editor', component: LifeBookEditorView },

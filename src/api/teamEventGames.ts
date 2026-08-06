@@ -24,27 +24,52 @@ export interface CreatedGame {
   startTime: string | null
 }
 
+const gamesBase = (teamId: string, eventId: string) =>
+  `/chat/teams/${encodeURIComponent(teamId)}/events/${encodeURIComponent(eventId)}/games`
+
+async function gameRequest<T>(path: string, method: string, payload?: unknown): Promise<T | null> {
+  const response = await fetch(buildV2ApiUrl(path), {
+    method,
+    headers: {
+      ...getAuthHeaders(),
+      Accept: 'application/json',
+      ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {})
+    },
+    ...(payload !== undefined ? { body: JSON.stringify(payload) } : {})
+  })
+  const envelope = (await response.json().catch(() => ({}))) as {
+    responseStatus?: { message?: string }
+    data?: T
+  }
+  if (!response.ok) {
+    throw new Error(envelope.responseStatus?.message || 'Request failed.')
+  }
+  return envelope.data ?? null
+}
+
 export async function createTeamEventGame(
   teamId: string,
   eventId: string,
   payload: CreateGamePayload
 ): Promise<CreatedGame> {
-  const path = `/chat/teams/${encodeURIComponent(teamId)}/events/${encodeURIComponent(eventId)}/games`
-  const response = await fetch(buildV2ApiUrl(path), {
-    method: 'POST',
-    headers: {
-      ...getAuthHeaders(),
-      Accept: 'application/json',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  })
-  const envelope = (await response.json().catch(() => ({}))) as {
-    responseStatus?: { message?: string }
-    data?: { game?: CreatedGame }
-  }
-  if (!response.ok || !envelope.data?.game) {
-    throw new Error(envelope.responseStatus?.message || 'Could not create the game.')
-  }
-  return envelope.data.game
+  const data = await gameRequest<{ game?: CreatedGame }>(gamesBase(teamId, eventId), 'POST', payload)
+  if (!data?.game) throw new Error('Could not create the game.')
+  return data.game
+}
+
+export async function updateTeamEventGame(
+  teamId: string,
+  eventId: string,
+  gameId: string,
+  payload: CreateGamePayload
+): Promise<void> {
+  await gameRequest(`${gamesBase(teamId, eventId)}/${encodeURIComponent(gameId)}`, 'PUT', payload)
+}
+
+export async function deleteTeamEventGame(
+  teamId: string,
+  eventId: string,
+  gameId: string
+): Promise<void> {
+  await gameRequest(`${gamesBase(teamId, eventId)}/${encodeURIComponent(gameId)}`, 'DELETE')
 }

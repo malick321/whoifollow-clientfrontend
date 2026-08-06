@@ -11,18 +11,36 @@ import DateTimePicker from './DateTimePicker.vue'
 import TimePicker from './TimePicker.vue'
 import MultiSelectDropdown from './MultiSelectDropdown.vue'
 import { US_STATES } from '../api/associationTeams'
-import { createTeamEventGame } from '../api/teamEventGames'
+import { createTeamEventGame, updateTeamEventGame } from '../api/teamEventGames'
 import { pushToast } from '../toast-center'
+
+interface EditableGame {
+  id: string
+  edit?: {
+    name?: string | null
+    opponentName?: string | null
+    opponentCountry?: string | null
+    opponentState?: string | null
+    opponentCity?: string | null
+    startDate?: string | null
+    startTime?: string | null
+    note?: string | null
+  } | null
+}
 
 const props = defineProps<{
   modelValue: boolean
   teamId: string
   eventId: string
+  /** When set, the modal is in Edit mode and prefills from `game.edit`. */
+  game?: EditableGame | null
 }>()
 const emit = defineEmits<{
   (event: 'update:modelValue', value: boolean): void
   (event: 'saved'): void
 }>()
+
+const isEdit = computed(() => !!props.game)
 
 const name = ref('')
 const opponentName = ref('')
@@ -46,42 +64,49 @@ function err(key: string) {
   return submitAttempted.value && errors.value.has(key)
 }
 
-function reset() {
-  name.value = ''
-  opponentName.value = ''
-  opponentCity.value = ''
-  stateArr.value = []
-  startDate.value = ''
-  startTime.value = ''
-  note.value = ''
+function hydrate() {
+  const e = props.game?.edit
+  name.value = e?.name ?? ''
+  opponentName.value = e?.opponentName ?? ''
+  opponentCity.value = e?.opponentCity ?? ''
+  stateArr.value = e?.opponentState ? [e.opponentState] : []
+  startDate.value = e?.startDate ?? ''
+  startTime.value = e?.startTime ?? ''
+  note.value = e?.note ?? ''
   saving.value = false
   submitAttempted.value = false
   saveError.value = ''
 }
 
-// Reset each time the modal opens so a fresh create never shows stale input.
-watch(() => props.modelValue, (open) => { if (open) reset() })
+// (Re)hydrate each time the modal opens — prefilled for edit, blank for create.
+watch(() => props.modelValue, (open) => { if (open) hydrate() })
 
 async function save() {
   submitAttempted.value = true
   if (errors.value.size > 0) return
   saving.value = true
   saveError.value = ''
+  const payload = {
+    name: name.value.trim(),
+    opponentName: opponentName.value.trim(),
+    opponentCity: opponentCity.value.trim() || undefined,
+    opponentState: stateArr.value[0] || undefined,
+    startDate: startDate.value,
+    startTime: startTime.value || undefined,
+    note: note.value.trim() || undefined
+  }
   try {
-    await createTeamEventGame(props.teamId, props.eventId, {
-      name: name.value.trim(),
-      opponentName: opponentName.value.trim(),
-      opponentCity: opponentCity.value.trim() || undefined,
-      opponentState: stateArr.value[0] || undefined,
-      startDate: startDate.value,
-      startTime: startTime.value || undefined,
-      note: note.value.trim() || undefined
-    })
-    pushToast({ tone: 'success', title: 'Game created' })
+    if (isEdit.value && props.game) {
+      await updateTeamEventGame(props.teamId, props.eventId, props.game.id, payload)
+      pushToast({ tone: 'success', title: 'Game updated' })
+    } else {
+      await createTeamEventGame(props.teamId, props.eventId, payload)
+      pushToast({ tone: 'success', title: 'Game created' })
+    }
     emit('saved')
     emit('update:modelValue', false)
   } catch (error) {
-    saveError.value = error instanceof Error ? error.message : 'Could not create the game.'
+    saveError.value = error instanceof Error ? error.message : 'Could not save the game.'
   } finally {
     saving.value = false
   }
@@ -91,8 +116,8 @@ async function save() {
 <template>
   <SlideModal
     :model-value="modelValue"
-    title="Add Game"
-    eyebrow="New Game"
+    :title="isEdit ? 'Edit Game' : 'Add Game'"
+    :eyebrow="isEdit ? 'Edit Game' : 'New Game'"
     @update:model-value="(v) => emit('update:modelValue', v)"
   >
     <div class="create-game-form">
@@ -136,7 +161,7 @@ async function save() {
       <span class="create-game-form__spacer"></span>
       <button type="button" class="primary-button" :disabled="saving" @click="save">
         <span v-if="saving" class="btn-spinner" aria-hidden="true"></span>
-        {{ saving ? 'Creating…' : 'Create Game' }}
+        {{ saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Game') }}
       </button>
     </template>
   </SlideModal>
