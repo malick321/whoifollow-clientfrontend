@@ -858,6 +858,20 @@ textarea {
   top: var(--topbar-height);
 }
 
+/* Member surfaces (team / event detail) render the sticky MemberTopBar
+   (56px desktop / 52px mobile, z-index 200) instead of the portal topbar, so
+   the condensed sticky header must pin BELOW it — at top:0 it tucks behind the
+   MemberTopBar and never shows. Wins over the `--authenticated { top:0 }` rule
+   above by source order (equal specificity). */
+.app-shell--member .condensed-team-header {
+  top: 56px;
+}
+@media (max-width: 720px) {
+  .app-shell--member .condensed-team-header {
+    top: 52px;
+  }
+}
+
 /* Legacy `.sidebar` / `.sidebar-link*` rules removed (used to paint
    a 70px global rail with Tasks / My Life / My Orders items in the
    pre-portal team-participation app). No template renders these
