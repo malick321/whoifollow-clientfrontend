@@ -64,6 +64,12 @@ export interface GameLineupRow {
   user?: { name?: string } | null
 }
 
+export interface StatsSums {
+  ab: number; h: number; one_b: number; two_b: number; three_b: number; hr: number
+  rbi: number; r: number; bb: number; sac: number; e: number; solo_hr: number
+  average: string; on_base_avg: string
+}
+
 export interface GameScoringData {
   game: GameRow | null
   teamName: string
@@ -72,6 +78,7 @@ export interface GameScoringData {
   opponentRuns: number
   isMyTeamBatting: boolean
   gameLineUps: GameLineupRow[]
+  stats_sums?: StatsSums | null
 }
 
 type Envelope<T> = { data?: T | null; message?: string; statusCode?: number }
