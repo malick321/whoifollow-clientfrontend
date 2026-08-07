@@ -275,6 +275,11 @@ const sortedPlayers = computed(() => {
     .filter((player) => !query || player.name.toLowerCase().includes(query))
     .sort((a, b) => num(b) - num(a))
 })
+// "Never rank a tied field": if every player shares the same OBP, a leaderboard
+// is just alphabetical order pretending to be merit — show an empty state.
+const playersAllTied = computed(() =>
+  players.value.length > 1 && players.value.every((p) => p.obp === players.value[0].obp)
+)
 
 const memberBreakdown = computed(() => {
   const admins = members.value.filter((member) => member.isAdmin).length
@@ -1026,159 +1031,134 @@ onBeforeUnmount(() => {
 
       <!-- Player Statistics -->
       <template v-else-if="activeTab === 'player-stats'">
-        <div class="td-stats-toolbar">
-        <div v-if="events.length" class="association-teams__filters td-stats-filters">
+        <div class="filters solo">
           <MultiSelectDropdown v-model="statEventArr" :options="eventNameOptions" placeholder="Event" single :searchable="false" aria-label="Event" />
           <MultiSelectDropdown v-model="statTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
           <MultiSelectDropdown v-model="statAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
+          <input v-model="memberSearch" type="text" placeholder="Search players" aria-label="Search players" style="margin-left:auto;width:190px" />
         </div>
-          <label class="td-search-wrap td-search-wrap--stats">
-            <AppIcon name="search" :size="15" />
-            <input v-model="memberSearch" type="search" class="td-search" placeholder="Search players..." aria-label="Search players" />
-          </label>
+
+        <div class="metrics">
+          <div v-for="metric in playerMetricCards" :key="metric.label" class="m">
+            <span class="k">{{ metric.label }}</span>
+            <span class="v n" :class="{ none: metric.value === '—' }">{{ metric.value }}</span>
+            <span class="s">{{ metric.hint }}</span>
+          </div>
         </div>
-        <div class="td-metric-grid">
-          <article v-for="metric in playerMetricCards" :key="metric.label" class="td-metric-card" :class="`is-${metric.tone}`">
-            <span class="td-metric-card__icon"><AppIcon name="trophy" :size="20" /></span>
-            <span><small>{{ metric.label }}</small><b>{{ metric.value }}</b><em>{{ metric.hint }}</em></span>
-            <i></i>
-          </article>
-        </div>
-        <div v-if="players.length" class="td-filter">
-          <span class="td-filter__label">Sort by</span>
-          <button
-            v-for="s in PLAYER_SORTS"
-            :key="s.key"
-            type="button"
-            class="td-filter__chip"
-            :class="{ 'td-filter__chip--active': playerSort === s.key }"
-            @click="playerSort = s.key"
-          >{{ s.label }}</button>
-        </div>
-        <div v-if="players.length" class="td-stats-layout">
-          <section class="td-content-card td-content-card--table">
-            <div class="td-side-card__head"><h3>Player Statistics</h3><span>{{ players.length }} players</span></div>
-        <div class="team-detail__table-wrap">
-          <table class="team-detail__table">
-            <thead>
-              <tr>
-                <th class="td-l">Player</th><th>G</th><th>AB</th><th>H</th>
-                <th>HR</th><th>RBI</th><th>R</th><th>BB</th><th>AVG</th><th>OBP</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(p, i) in sortedPlayers" :key="p.userId" :class="{ 'td-leader': i === 0 }">
-                <td class="td-l"><span v-if="i === 0" class="td-leader-mark" aria-hidden="true">★</span>{{ p.name }}</td>
-                <td>{{ p.games }}</td><td>{{ p.ab }}</td><td>{{ p.h }}</td>
-                <td>{{ p.hr }}</td><td>{{ p.rbi }}</td><td>{{ p.r }}</td><td>{{ p.bb }}</td>
-                <td>{{ p.avg }}</td><td>{{ p.obp }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-          </section>
-          <aside class="td-side-stack">
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Top Performers</h3><span>View all</span></div>
-              <ol class="td-performers">
-                <li v-for="(player, index) in sortedPlayers.slice(0, 5)" :key="`top-${player.userId}`">
-                  <b>{{ index + 1 }}</b><span>{{ player.name }}</span><strong>{{ index === 0 ? player.obp : index === 1 ? player.avg : player.h }}</strong>
-                </li>
-              </ol>
-            </section>
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Performance Trend</h3><span>30D</span></div>
-              <svg class="td-trend" viewBox="0 0 720 90" preserveAspectRatio="none" aria-label="Performance trend">
-                <polyline points="0,62 90,45 180,58 270,30 360,52 450,26 540,46 630,22 720,38" />
-                <polyline class="is-violet" points="0,72 90,62 180,68 270,48 360,60 450,42 540,58 630,38 720,52" />
-              </svg>
-            </section>
-          </aside>
-        </div>
-        <div v-else class="matchgeni-placeholder">
-          <h3 class="matchgeni-placeholder__title">No player statistics yet</h3>
-          <p class="matchgeni-placeholder__copy">Batting stats will show here once this team’s games are scored.</p>
+
+        <div class="cols">
+          <div class="card">
+            <header>
+              <h2>Player statistics</h2><span class="cnt">{{ players.length }} players</span>
+              <div class="sp">
+                <select v-model="playerSort" class="n" aria-label="Sort players">
+                  <option v-for="s in PLAYER_SORTS" :key="s.key" :value="s.key">Sort: {{ s.label }}</option>
+                </select>
+              </div>
+            </header>
+            <div v-if="players.some((p) => Number(p.h) > 0 && !Number(p.ab))" class="note">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.8"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              <p>Batting averages are hidden for players with hits but zero at-bats — the rate can't be computed until the boxscore is corrected.</p>
+            </div>
+            <div v-if="players.length" class="tw">
+              <table>
+                <thead><tr><th class="l">Player</th><th>G</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>R</th><th>BB</th><th>AVG</th><th>OBP</th></tr></thead>
+                <tbody>
+                  <tr v-for="(p, i) in sortedPlayers" :key="p.userId" :class="{ top: i === 0 && !playersAllTied }">
+                    <td class="l"><span class="rank n">{{ i + 1 }}</span>{{ p.name }}</td>
+                    <td class="n" :class="{ z: !Number(p.games) }">{{ p.games }}</td>
+                    <td class="n" :class="{ z: !Number(p.ab) }">{{ p.ab }}</td>
+                    <td class="n" :class="{ z: !Number(p.h) }">{{ p.h }}</td>
+                    <td class="n" :class="{ z: !Number(p.hr) }">{{ p.hr }}</td>
+                    <td class="n" :class="{ z: !Number(p.rbi) }">{{ p.rbi }}</td>
+                    <td class="n" :class="{ z: !Number(p.r) }">{{ p.r }}</td>
+                    <td class="n" :class="{ z: !Number(p.bb) }">{{ p.bb }}</td>
+                    <td class="n" :class="{ z: !Number(p.ab) }">{{ Number(p.ab) ? p.avg : '—' }}</td>
+                    <td class="n" :class="{ z: !Number(p.ab) }">{{ Number(p.ab) ? p.obp : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="empty"><span class="ring"><AppIcon name="document" :size="20" /></span><h3>No player statistics yet</h3><p>Batting stats show here once this team's games are scored.</p></div>
+          </div>
+
+          <div class="card">
+            <header><h2>Top performers</h2></header>
+            <div v-if="players.length && !playersAllTied" class="pad">
+              <div class="keys" style="margin-top:0">
+                <div v-for="(player, index) in sortedPlayers.slice(0, 5)" :key="`top-${player.userId}`">
+                  <span class="rank n">{{ index + 1 }}</span><span class="lb">{{ player.name }}</span><span class="vl n">{{ player.obp }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty">
+              <span class="ring"><AppIcon name="award" :size="20" /></span>
+              <h3>No ranking yet</h3>
+              <p>Every player shares the same rate, so a leaderboard would just be alphabetical. Once at-bats are recorded, the top five by on-base show here.</p>
+            </div>
+          </div>
         </div>
       </template>
 
       <!-- Team Statistics — per-game batting table + Total row (legacy layout) -->
       <template v-else-if="activeTab === 'team-stats'">
-        <div class="td-stats-toolbar">
-        <div v-if="events.length" class="association-teams__filters td-stats-filters">
+        <div class="filters solo">
           <MultiSelectDropdown v-model="statEventArr" :options="eventNameOptions" placeholder="Event" single :searchable="false" aria-label="Event" />
           <MultiSelectDropdown v-model="statTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
           <MultiSelectDropdown v-model="statAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
         </div>
+
+        <div class="metrics six">
+          <div v-for="metric in teamMetricCards" :key="metric.label" class="m">
+            <span class="k">{{ metric.label }}</span>
+            <span class="v n" :class="{ none: metric.value === '—' }">{{ metric.value }}</span>
+            <span class="s">{{ metric.hint }}</span>
+          </div>
         </div>
-        <div class="td-metric-grid">
-          <article v-for="metric in teamMetricCards" :key="metric.label" class="td-metric-card" :class="`is-${metric.tone}`">
-            <span class="td-metric-card__icon"><AppIcon name="trophy" :size="20" /></span>
-            <span><small>{{ metric.label }}</small><b>{{ metric.value }}</b><em>{{ metric.hint }}</em></span>
-            <i></i>
-          </article>
-        </div>
-        <div v-if="teamGameStats.games.length" class="td-team-insights">
-          <section class="td-side-card td-trend-card">
-            <div class="td-side-card__head"><h3>Team Performance Trend</h3><span>Last 6 Events</span></div>
-            <div class="td-chart-legend"><span><i class="is-blue"></i>Onbase %</span><span><i class="is-violet"></i>Average</span></div>
-            <svg class="td-trend td-trend--large" viewBox="0 0 720 90" preserveAspectRatio="none" aria-label="Team performance trend">
-              <polyline :points="performancePoints" />
-              <polyline class="is-violet" points="0,65 90,58 180,64 270,52 360,61 450,48 540,56 630,43 720,50" />
-            </svg>
-          </section>
-          <section class="td-side-card">
-            <div class="td-side-card__head"><h3>Offense Breakdown</h3></div>
-            <div class="td-offense">
-              <div class="td-offense-ring"><span><b>{{ teamTotals.h }}</b><small>Total Hits</small></span></div>
-              <div class="td-overview__legend">
-                <span><i class="is-blue"></i>Singles <b>{{ teamTotals.one_b }}</b></span>
-                <span><i class="is-violet"></i>Doubles <b>{{ teamTotals.two_b }}</b></span>
-                <span><i class="is-orange"></i>Triples <b>{{ teamTotals.three_b }}</b></span>
-                <span><i class="is-green"></i>Home Runs <b>{{ teamTotals.hr }}</b></span>
-              </div>
+
+        <div class="cols">
+          <div class="card">
+            <header><h2>Performance trend</h2><span class="cnt">last {{ teamGameStats.games.length }} games</span></header>
+            <div v-if="teamGameStats.games.length >= 3" class="pad">
+              <svg viewBox="0 0 720 90" preserveAspectRatio="none" aria-label="On-base percentage across recent games" style="width:100%;height:auto">
+                <polyline :points="performancePoints" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" />
+              </svg>
             </div>
-          </section>
-        </div>
-        <div v-if="teamGameStats.games.length" class="team-detail__table-wrap">
-          <table class="team-detail__table team-detail__stats-table">
-            <thead>
-              <tr>
-                <th class="td-l">Game</th>
-                <th
-                  v-for="c in STAT_COLS"
-                  :key="c.key"
-                  class="td-sortable"
-                  :class="{ 'td-sorted': statSort === c.key }"
-                  @click="sortByCol(c.key)"
-                >{{ c.label }}<span v-if="statSort === c.key" class="td-sortarrow">{{ statDir === 'desc' ? '▾' : '▴' }}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="teamGameStats.total" class="td-total-row">
-                <td class="td-l"><b>Total</b></td>
-                <td v-for="c in STAT_COLS" :key="c.key"><b>{{ (teamGameStats.total as Record<string, unknown>)[c.key] }}</b></td>
-              </tr>
-              <tr v-for="row in sortedGameStats" :key="row.gameId">
-                <td class="td-l">
-                  <span class="td-game__date">{{ row.date || '—' }}</span>
-                  <span class="td-game__line">
-                    <StatusBadge
-                      v-if="row.result"
-                      :label="row.result === 'won' ? 'Won' : 'Lost'"
-                      :tone="row.result === 'won' ? 'success' : 'danger'"
-                    />
-                    <span class="td-game__opp">vs {{ row.opponentName }}</span>
-                  </span>
-                  <span v-if="row.eventName" class="td-game__event">{{ row.eventName }}</span>
-                </td>
-                <td v-for="c in STAT_COLS" :key="c.key">{{ (row as unknown as Record<string, unknown>)[c.key] }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else class="matchgeni-placeholder">
-          <h3 class="matchgeni-placeholder__title">No team statistics yet</h3>
-          <p class="matchgeni-placeholder__copy">Per-game team stats appear here once games are scored.</p>
+            <div v-else class="empty"><span class="ring"><AppIcon name="award" :size="20" /></span><h3>Not enough games to chart</h3><p>A trend needs at least 3 scored games. Score more to see the line.</p></div>
+          </div>
+
+          <div class="card">
+            <header><h2>Hit breakdown</h2><span class="cnt">{{ teamTotals.h }} hits</span></header>
+            <div class="pad">
+              <template v-if="teamTotals.h">
+                <div v-for="hb in [{ n: 'Singles', v: teamTotals.one_b, c: '--blue' }, { n: 'Doubles', v: teamTotals.two_b, c: '--purple' }, { n: 'Triples', v: teamTotals.three_b, c: '--amber' }, { n: 'Home runs', v: teamTotals.hr, c: '--green' }]" :key="hb.n" style="margin-bottom:13px">
+                  <div style="display:flex;font-size:13px;margin-bottom:6px"><span style="color:var(--mu-2)">{{ hb.n }}</span><b class="n" style="margin-left:auto">{{ hb.v }}</b><span class="n" style="color:var(--mu);width:42px;text-align:right">{{ Math.round((hb.v / teamTotals.h) * 100) }}%</span></div>
+                  <div class="prog" style="margin:0"><div :style="{ width: ((hb.v / teamTotals.h) * 100) + '%', background: 'var(' + hb.c + ')' }"></div></div>
+                </div>
+              </template>
+              <p v-else style="margin:0;color:var(--mu-2);font-size:13px">No hits recorded yet.</p>
+            </div>
+          </div>
+
+          <div class="card" style="grid-column:1/-1">
+            <header><h2>Game log</h2><span class="cnt">{{ teamGameStats.games.length }} games</span></header>
+            <div v-if="teamGameStats.games.length" class="tw">
+              <table>
+                <thead><tr><th class="l">Game</th><th v-for="c in STAT_COLS" :key="c.key" style="cursor:pointer" @click="sortByCol(c.key)">{{ c.label }}<span v-if="statSort === c.key"> {{ statDir === 'desc' ? '▾' : '▴' }}</span></th></tr></thead>
+                <tbody>
+                  <tr v-for="row in sortedGameStats" :key="row.gameId">
+                    <td class="l">
+                      <span v-if="row.result" class="chip" :class="row.result === 'won' ? 'g' : 'r'">{{ row.result === 'won' ? 'Won' : 'Lost' }}</span>
+                      {{ row.date || '—' }} · vs {{ row.opponentName }}
+                    </td>
+                    <td v-for="c in STAT_COLS" :key="c.key" class="n" :class="{ z: !Number((row as unknown as Record<string, unknown>)[c.key]) }">{{ (row as unknown as Record<string, unknown>)[c.key] }}</td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="teamGameStats.total"><tr><td class="l">Total</td><td v-for="c in STAT_COLS" :key="c.key" class="n">{{ (teamGameStats.total as Record<string, unknown>)[c.key] }}</td></tr></tfoot>
+              </table>
+            </div>
+            <div v-else class="empty"><span class="ring"><AppIcon name="document" :size="20" /></span><h3>No team statistics yet</h3><p>Per-game team stats appear here once games are scored.</p></div>
+          </div>
         </div>
       </template>
     </section>
