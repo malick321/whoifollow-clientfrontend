@@ -14,6 +14,8 @@ import {
 import { hasAnyPermission, hasPermission } from './lib/permissions'
 import type { AssociationPermissionKey } from './types'
 import './styles.css'
+// Dark redesign design system — scoped under `.rd`, does not affect existing screens.
+import './redesign-theme.css'
 
 // Apply the persisted theme class to <html> BEFORE Vue mounts so the initial
 // paint matches the saved preference. The inline script in `index.html`
