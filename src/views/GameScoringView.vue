@@ -13,8 +13,8 @@ import { pushToast } from '../toast-center'
 import { confirmDialog } from '../confirm-center'
 import { fetchTeamEventOverview } from '../api/teamEventDetail'
 import {
-  addInning, deleteLastInning, endGame, endHalfInning, fetchGameScoring, reopenGame,
-  selectHomeTeam, swapGameTeams, updateBattingStats, updateScore,
+  deleteLastInning, endGame, endHalfInning, fetchGameScoring, reopenGame,
+  selectHomeTeam, swapGameTeams, updateBattingStats, updatePreviousScore, updateScore,
   type GameLineupRow, type GameScoreRow, type GameScoringData
 } from '../api/gameScoring'
 
@@ -185,13 +185,21 @@ function nowHM(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
-function setHomeTeam(weAreHome: boolean) {
+
+// ── Start game (legacy Select-Home-Team modal, inline in redesign) ──
+const homeChoice = ref<'us' | 'opp'>('us') // which team is home
+const startTime = ref(nowHM())
+const timeLimit = ref('')
+function startGame() {
   if (!game.value) return
   void run(() => selectHomeTeam({
     game_id: game.value!.id, team_id: game.value!.team_id, team_name: teamName.value,
-    opponent_flag: weAreHome ? 1 : 0, actual_start_time: nowHM()
+    opponent_flag: homeChoice.value === 'us' ? 1 : 0, // 1 = my team home, 0 = my team visiting
+    actual_start_time: startTime.value || nowHM(),
+    time_limit: timeLimit.value ? Number(timeLimit.value) : null
   }), 'Game started')
 }
+
 function bump(inningType: number, delta: number) {
   if (!game.value || !battingRow.value) return
   const cur = cell(battingRow.value, currentInning.value, inningType)
@@ -203,26 +211,64 @@ function bump(inningType: number, delta: number) {
 const padRuns = computed(() => cell(battingRow.value, currentInning.value, 2))
 const padHr = computed(() => cell(battingRow.value, currentInning.value, 1))
 
-function doEndHalf() { if (game.value) void run(() => endHalfInning(game.value!.id), 'Half inning ended') }
-function doAddInning() { if (game.value) void run(() => addInning(game.value!.id), 'Inning added') }
+// End half inning — legacy confirm shows Middle/End of Nth + the R/HR line.
+async function doEndHalf() {
+  if (!game.value || !battingRow.value) return
+  const homeBatting = battingRow.value.team_type === 2
+  const ord = ordinal(currentInning.value)
+  const runs = cell(battingRow.value, currentInning.value, 2)
+  const hr = cell(battingRow.value, currentInning.value, 1)
+  const ok = await confirmDialog({
+    title: homeBatting ? `End of ${ord} inning` : `Middle of ${ord} inning`,
+    message: `${battingName.value} — ${runs} run${runs === 1 ? '' : 's'}, ${hr} HR this inning.`,
+    confirmLabel: 'End half inning'
+  })
+  if (ok) void run(() => endHalfInning(game.value!.id), 'Half inning ended')
+}
 async function doDeleteInning() {
-  if (game.value && await confirmDialog({ title: 'Undo last inning?', message: 'The most recent inning will be removed.', confirmLabel: 'Undo', danger: true }))
+  if (game.value && await confirmDialog({ title: 'Delete last inning', message: 'Are you sure you want to delete this inning? You will not be able to revert this action.', confirmLabel: 'Delete inning', danger: true }))
     void run(() => deleteLastInning(game.value!.id), 'Inning removed')
 }
 async function doSwap() {
-  if (game.value && await confirmDialog({ title: 'Swap home / visitor?', message: 'This resets all innings and scores for this game.', confirmLabel: 'Swap', danger: true }))
+  if (game.value && await confirmDialog({ title: 'Swap home / visitor', message: `Swapping home & visitor will erase all game data. ${visitorName.value || teamName.value} will become the home team.`, confirmLabel: 'Continue', danger: true }))
     void run(() => swapGameTeams(game.value!.id), 'Teams swapped')
 }
 async function doEndGame() {
-  if (game.value && await confirmDialog({ title: 'End game?', message: 'The final score will be locked in.', confirmLabel: 'End game' }))
+  if (game.value && await confirmDialog({ title: 'End game', message: 'Are you sure you want to end this game? You will not be able to revert this action.', confirmLabel: 'End game', danger: true }))
     void run(() => endGame(game.value!.id), 'Game ended')
 }
-function doReopen() { if (game.value) void run(() => reopenGame(game.value!.id), 'Game reopened') }
+async function doRestart() {
+  if (game.value && await confirmDialog({ title: 'Restart game', message: 'Are you sure you want to restart this game?', confirmLabel: 'Restart game' }))
+    void run(() => reopenGame(game.value!.id), 'Game reopened')
+}
+
+// ── Correct a previously-scored inning cell (legacy Update-Scores modal) ──
+const editCell = ref<{ inningNo: number; gameScoreId: number | string; teamLabel: string; run: number; hr: number } | null>(null)
+function openCellEdit(row: GameScoreRow, inningNo: number) {
+  if (!isAdmin.value || !hasStarted.value) return
+  editCell.value = {
+    inningNo,
+    gameScoreId: row.id,
+    teamLabel: `${row.team_flag === 1 ? teamName.value : opponentName.value} · ${row.team_type === 1 ? 'Visiting team' : 'Home team'}`,
+    run: cell(row, inningNo, 2),
+    hr: cell(row, inningNo, 1)
+  }
+}
+function savePreviousScore() {
+  const c = editCell.value
+  if (!game.value || !c) return
+  void run(() => updatePreviousScore({
+    game_id: game.value!.id, game_score_id: c.gameScoreId, inning_no: c.inningNo,
+    run_score: Math.max(0, Number(c.run) || 0), hr_score: Math.max(0, Number(c.hr) || 0)
+  }), 'Score updated')
+  editCell.value = null
+}
 
 function saveBatting(row: GameLineupRow) {
   void run(() => updateBattingStats({
     id: row.id, ab: +row.ab || 0, one_b: +row.one_b || 0, two_b: +row.two_b || 0, three_b: +row.three_b || 0,
-    hr: +row.hr || 0, rbi: +row.rbi || 0, r: +row.r || 0, bb: +row.bb || 0, sac: +row.sac || 0, e: +row.e || 0
+    hr: +row.hr || 0, rbi: +row.rbi || 0, r: +row.r || 0, bb: +row.bb || 0, sac: +row.sac || 0, e: +row.e || 0,
+    solo_hr: Number((row as unknown as { solo_hr?: number }).solo_hr ?? 0) || 0
   }))
 }
 function back() { router.push({ name: 'team-event-detail', params: { teamId: teamId.value, eventId: eventId.value } }) }
@@ -261,8 +307,7 @@ onMounted(() => { void load() })
         </div>
 
         <div class="board-right">
-          <button v-if="isAdmin && hasStarted && !isFinal" type="button" class="btn sm dgr" :disabled="saving" @click="doEndGame">End game</button>
-          <button v-if="isAdmin && isFinal" type="button" class="btn sm" :disabled="saving" @click="doReopen">Reopen game</button>
+          <span v-if="isFinal" class="chip n">Final</span>
         </div>
       </div>
     </div>
@@ -287,15 +332,20 @@ onMounted(() => { void load() })
             </div>
           </header>
 
-          <!-- Pre-game: set the home team -->
+          <!-- Pre-game: select home team + start time + time limit (legacy Start Game) -->
           <div v-if="!hasStarted && isAdmin" class="sethome">
-            <p>Who is the home team?</p>
-            <div class="rsvp">
-              <button type="button" :disabled="saving" @click="setHomeTeam(true)">{{ teamName }} home</button>
-              <button type="button" :disabled="saving" @click="setHomeTeam(false)">{{ opponentName }} home</button>
+            <p>Select the home team and start the game.</p>
+            <div class="seg" role="group" aria-label="Home team">
+              <button type="button" :aria-pressed="homeChoice === 'us'" @click="homeChoice = 'us'">{{ teamName }} home</button>
+              <button type="button" :aria-pressed="homeChoice === 'opp'" @click="homeChoice = 'opp'">{{ opponentName }} home</button>
             </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <div class="fld"><label>Start time</label><input v-model="startTime" type="time" aria-label="Start time" /></div>
+              <div class="fld"><label>Time limit (min)</label><input v-model="timeLimit" type="number" min="0" inputmode="numeric" placeholder="e.g. 55" aria-label="Time limit in minutes" style="width:120px" /></div>
+            </div>
+            <div><button type="button" class="btn pri" :disabled="saving" @click="startGame">Start game</button></div>
           </div>
-          <div v-else-if="!hasStarted" class="pad"><p style="margin:0;color:var(--mu-2)">Scoring hasn't started yet. A team admin sets the home team to begin.</p></div>
+          <div v-else-if="!hasStarted" class="pad"><p style="margin:0;color:var(--mu-2)">Scoring hasn't started yet. A team admin selects the home team to begin.</p></div>
 
           <!-- Live: run / HR steppers -->
           <template v-else-if="!isFinal && isAdmin">
@@ -327,13 +377,19 @@ onMounted(() => { void load() })
                 End half inning
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m0 0-6-6m6 6-6 6" /></svg>
               </button>
-              <button type="button" class="btn" :disabled="saving" @click="doAddInning">Add inning</button>
-              <button type="button" class="btn" :disabled="saving" @click="doDeleteInning">Undo last inning</button>
-              <button type="button" class="btn dgr" :disabled="saving" @click="doSwap">Swap home / visitor</button>
+              <button type="button" class="btn" :disabled="saving" @click="doSwap">Swap home / visitor</button>
+              <button type="button" class="btn" :disabled="saving" @click="doDeleteInning">Delete last inning</button>
+              <button type="button" class="btn dgr" :disabled="saving" @click="doEndGame">End game</button>
             </div>
           </template>
 
-          <div v-else class="pad"><p style="margin:0;color:var(--mu-2)">{{ isFinal ? 'This game is final. Reopen it from the scoreboard to make changes.' : 'Scoring is managed by a team admin.' }}</p></div>
+          <!-- Final: restart -->
+          <div v-else-if="isFinal && isAdmin" class="actions" style="padding-top:16px">
+            <button type="button" class="btn pri" :disabled="saving" @click="doRestart">Restart game</button>
+            <span style="font-size:12.5px;color:var(--mu);align-self:center">This game is final. Restart it to make changes.</span>
+          </div>
+
+          <div v-else class="pad"><p style="margin:0;color:var(--mu-2)">Scoring is managed by a team admin.</p></div>
         </div>
 
         <!-- Game status (right rail) -->
@@ -367,7 +423,13 @@ onMounted(() => { void load() })
               <tbody>
                 <tr v-for="r in lineRows" :key="r.row.id">
                   <td class="l"><div class="pcell"><TeamAvatar :name="r.name" size="sm" /><span class="nm">{{ r.name }}</span></div></td>
-                  <td v-for="n in innings" :key="n" class="c" :class="{ has: hasCell(r.row, n), lv: n === currentInning }">{{ hasCell(r.row, n) ? cell(r.row, n, 2) : '—' }}</td>
+                  <td
+                    v-for="n in innings" :key="n" class="c"
+                    :class="{ has: hasCell(r.row, n), lv: n === currentInning, edit: isAdmin }"
+                    :role="isAdmin ? 'button' : undefined" :tabindex="isAdmin ? 0 : undefined"
+                    :title="isAdmin ? 'Edit this inning' : undefined"
+                    @click="openCellEdit(r.row, n)"
+                  >{{ hasCell(r.row, n) ? cell(r.row, n, 2) : '—' }}</td>
                   <td class="tt n">{{ r.runs }}</td><td class="tt n">{{ r.hr }}</td>
                 </tr>
               </tbody>
@@ -455,6 +517,25 @@ onMounted(() => { void load() })
         </div>
       </div>
     </div>
+
+    <!-- Edit a previous inning's score (legacy Update Scores modal). -->
+    <div v-if="editCell" class="cell-modal" @click.self="editCell = null">
+      <div class="card cell-modal__box">
+        <header><h2>Update scores</h2></header>
+        <div class="pad">
+          <p style="margin:0 0 4px;font-size:12.5px;color:var(--mu-2)">{{ editCell.teamLabel }}</p>
+          <p style="margin:0 0 14px;font-size:12.5px;color:var(--mu)">Inning {{ editCell.inningNo }}</p>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <div class="fld"><label>Runs</label><input v-model.number="editCell.run" type="number" min="0" inputmode="numeric" aria-label="Runs" style="width:120px" /></div>
+            <div class="fld"><label>Home runs</label><input v-model.number="editCell.hr" type="number" min="0" inputmode="numeric" aria-label="Home runs" style="width:120px" /></div>
+          </div>
+        </div>
+        <div class="actions" style="padding-top:0">
+          <button type="button" class="btn pri" :disabled="saving" @click="savePreviousScore">Update</button>
+          <button type="button" class="btn" :disabled="saving" @click="editCell = null">Cancel</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -472,4 +553,12 @@ onMounted(() => { void load() })
 .fd-base { stroke: var(--line-3); stroke-width: 1.5; }
 .fd-pin { fill: var(--card-2); stroke: var(--blue); stroke-width: 1.5; }
 .fd-code { font-size: 11px; font-weight: 600; fill: var(--blue); }
+
+/* Clickable line-score cells (admin score correction). */
+.score-console :deep(.ls td.c.edit) { cursor: pointer; }
+.score-console :deep(.ls td.c.edit:hover) { background: var(--blue-bg); color: var(--blue); }
+
+/* Update-scores modal overlay. */
+.cell-modal { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.5); display: grid; place-items: center; padding: 20px; }
+.cell-modal__box { width: 100%; max-width: 360px; }
 </style>

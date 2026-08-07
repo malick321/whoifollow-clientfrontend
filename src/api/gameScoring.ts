@@ -120,6 +120,18 @@ export function updateScore(payload: UpdateScorePayload) {
   return postLegacyJson('/game/updateScore', payload)
 }
 
+// Correct a previously-scored inning cell (legacy line-score cell edit).
+export interface UpdatePreviousScorePayload {
+  game_id: number | string
+  game_score_id: number | string
+  inning_no: number
+  run_score: number
+  hr_score: number
+}
+export function updatePreviousScore(payload: UpdatePreviousScorePayload) {
+  return postLegacyJson('/game/updatePreviousScore', payload)
+}
+
 const gameAction = (path: string) => (gameId: number | string) =>
   postLegacyJson(path, { game_id: gameId })
 
