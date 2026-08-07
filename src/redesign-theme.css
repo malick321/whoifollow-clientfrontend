@@ -249,3 +249,76 @@
 .rd .mini{display:flex;gap:1px;font-size:12px;color:var(--mu-2)}
 .rd .mini b{color:var(--tx);font-weight:600}
 .rd .mrow .av{width:34px;height:34px;font-size:12px}
+
+/* ── Scoring console (from docs/redesign/scoring-console.html, 2nd style block).
+   Bridged to matchgeni tokens; bases/outs + clock + notifications omitted
+   because the legacy run/inning model has no data for them. ────────────────── */
+.rd .board{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--line)}
+.rd .board-in{max-width:1240px;margin:0 auto;padding:10px 20px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px}
+.rd .crumb{display:flex;align-items:center;gap:9px;min-width:0;font-size:13px}
+.rd .crumb a,.rd .crumb button{color:var(--mu-2);background:none;border:0;display:inline-flex;align-items:center}
+.rd .crumb a:hover,.rd .crumb button:hover{color:var(--tx)}
+.rd .crumb .sep{color:var(--off)}
+.rd .crumb strong{font-weight:600;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .score{display:flex;align-items:center;gap:16px;justify-self:center}
+.rd .team{display:flex;align-items:center;gap:9px;min-width:0}
+.rd .team.r{flex-direction:row-reverse}
+.rd .tname{font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px}
+.rd .tname i{display:block;font-style:normal;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.rd .runs{font:700 34px/1 var(--f);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.rd .runs.trail{color:var(--mu-2)}
+.rd .state{display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 6px}
+.rd .clock{font:600 11px var(--f);color:var(--mu);font-variant-numeric:tabular-nums}
+.rd .board-right{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+
+.rd .atbat{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 16px}
+.rd .step{background:var(--card-4);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.rd .step>.eyebrow{display:block;margin-bottom:9px}
+.rd .srow{display:flex;align-items:center;gap:10px}
+.rd .val{font:700 30px/1 var(--f);letter-spacing:-.03em;font-variant-numeric:tabular-nums;min-width:46px;text-align:center}
+.rd .pm{width:40px;height:40px;border:1px solid var(--line-2);background:var(--card-2);border-radius:9px;font-size:19px;display:grid;place-items:center;flex:none;line-height:0;color:var(--tx)}
+.rd .pm:hover:not(:disabled){border-color:var(--line-3);background:var(--card-3)}
+.rd .pm:disabled{opacity:.5;cursor:default}
+.rd .pm.up{background:var(--blue);border-color:var(--blue);color:var(--on-blue);font-weight:600}
+.rd .pm.up:hover:not(:disabled){filter:brightness(1.06)}
+.rd .quick{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}
+.rd .quick button{border:1px solid var(--line-2);background:var(--card-2);border-radius:6px;padding:3px 9px;font:500 11.5px var(--f);color:var(--mu-2)}
+.rd .quick button:hover:not(:disabled){color:var(--tx);border-color:var(--line-3)}
+.rd .quick button:disabled{opacity:.5;cursor:default}
+.rd .actions{display:flex;align-items:center;gap:8px;padding:0 16px 16px;flex-wrap:wrap}
+.rd .actions .btn{height:44px;border-radius:10px;font-size:14px}
+.rd .actions .btn.pri{flex:1;justify-content:center;font-size:14.5px;min-width:180px}
+.rd .sethome{padding:16px;display:flex;flex-direction:column;gap:10px}
+.rd .sethome p{margin:0;color:var(--mu-2)}
+
+.rd .ls th,.rd .ls td{text-align:center;height:36px;padding:0;border-right:1px solid var(--line)}
+.rd .ls thead th{position:static;text-align:center}
+.rd .ls th.l,.rd .ls td.l{text-align:left;padding-left:16px;width:240px;min-width:0;position:static;border-right:1px solid var(--line-2)}
+.rd .ls td.c{width:44px;color:var(--mu-2);font-variant-numeric:tabular-nums}
+.rd .ls td.c.has{color:var(--tx);font-weight:500}
+.rd .ls .lv{background:var(--blue-row)}
+.rd .ls thead th.lv{color:var(--blue);background:var(--blue-bg)}
+.rd .ls .tt{width:54px;font-weight:600;background:var(--card-2)}
+
+.rd .fieldwrap{display:grid;grid-template-columns:minmax(0,1fr) 290px;align-items:start}
+.rd .fieldbox{padding:16px;display:flex;justify-content:center}
+.rd .fieldbox svg{width:100%;max-width:560px;height:auto}
+.rd .assigns{border-left:1px solid var(--line);padding-top:16px;align-self:stretch}
+.rd .arow{display:flex;align-items:center;gap:10px;padding:7px 16px;border-bottom:1px solid var(--line)}
+.rd .arow:last-child{border-bottom:0}
+.rd .arow b{font:600 9.5px/16px var(--f);letter-spacing:.05em;background:var(--blue-bg);color:var(--blue);border-radius:5px;padding:0 6px;min-width:26px;text-align:center;flex:none}
+.rd .arow span{font-size:13px}
+.rd .plabel rect{fill:var(--card-2);stroke:var(--line-2)}
+@media(max-width:900px){.rd .fieldwrap{grid-template-columns:minmax(0,1fr)}.rd .assigns{border-left:0;border-top:1px solid var(--line)}}
+
+.rd .lu thead tr.grp th{top:0;z-index:4;height:26px;font:600 10px var(--f);letter-spacing:.13em;text-transform:uppercase;color:var(--mu);text-align:left;padding-left:10px;background:var(--card);border-bottom:1px solid var(--line)}
+.rd .lu thead tr.grp th.l{background:var(--card);z-index:5}
+.rd .lu thead tr.hd th{top:26px}
+.rd .lu td.l,.rd .lu th.l{min-width:250px}
+.rd .pos{font:600 9.5px/16px var(--f);letter-spacing:.04em;border:1px solid var(--line-2);border-radius:5px;padding:0 5px;color:var(--mu-2);flex:none}
+.rd .lu .stat{width:46px;height:26px;text-align:right;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--tx);font:inherit;font-variant-numeric:tabular-nums;font-size:13px}
+.rd .lu .stat:hover{border-color:var(--line-2)}
+.rd .lu .stat:focus{border-color:var(--blue);outline:none;background:var(--card-2)}
+.rd .lu tfoot td{background:var(--blue-bg);color:var(--tx);border-top:1px solid var(--blue-line)}
+.rd .lu tfoot td.l{background:var(--blue-bg)}
+@media(max-width:1000px){.rd .board-in{grid-template-columns:1fr auto}.rd .score{grid-column:1/-1;grid-row:2;justify-self:stretch;justify-content:space-between}.rd .atbat{grid-template-columns:1fr}}
