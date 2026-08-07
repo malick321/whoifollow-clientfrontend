@@ -93,6 +93,12 @@ const attendanceMembers = computed(() => {
   const status = rosterView.value === 'going' ? 'going' : 'not_responded'
   return overview.value?.attendance.members.filter((member) => member.status === status) ?? []
 })
+const goingPct = computed(() => {
+  const c = overview.value?.attendance.counts
+  if (!c) return 0
+  const total = c.going + c.maybe + c.notGoing + c.notResponded
+  return total ? Math.round((c.going / total) * 100) : 0
+})
 const defaultStats = (): EventBattingStats => ({
   games: 0, onbase: '0.000', average: '0.000', ab: 0, h: 0,
   oneB: 0, twoB: 0, threeB: 0, hr: 0, rbi: 0, runs: 0, bb: 0, sac: 0, errors: 0
@@ -177,6 +183,17 @@ function initials(name: string): string {
 }
 function gameStatusLabel(status: EventBoxscore['status']): string {
   return status === 'ongoing' ? 'Ongoing' : status === 'final' ? 'Final' : 'Scheduled'
+}
+// Redesign helpers: status chip class (amber for ongoing) + compact date rail.
+function gameChip(status: EventBoxscore['status']): 'a' | 'n' | 'b' {
+  return status === 'ongoing' ? 'a' : status === 'final' ? 'n' : 'b'
+}
+function gameRail(label: string | null | undefined): { dow: string; mon: string; day: string } {
+  const s = String(label || '')
+  const m = s.match(/([A-Za-z]{3,}),?\s+([A-Za-z]{3,})\s+(\d{1,2})/)
+  if (m) return { dow: m[1].slice(0, 3), mon: m[2].slice(0, 3), day: m[3] }
+  const m2 = s.match(/([A-Za-z]{3,})\s+(\d{1,2})/)
+  return m2 ? { dow: '', mon: m2[1].slice(0, 3), day: m2[2] } : { dow: '', mon: '', day: '—' }
 }
 function resetPlayerFilters() {
   playerLineup.value = 'all'
@@ -399,121 +416,125 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="loadError" class="ed-empty"><h2>Could not load this tab</h2><p>{{ loadError }}</p><button type="button" @click="loadActiveTab">Try again</button></div>
 
-      <div v-else-if="activeTab === 'boxscores'" class="ed-boxscore-layout">
-        <section class="ed-panel ed-games-panel">
-          <div class="ed-panel-toolbar">
-            <div class="ed-segments" aria-label="Filter boxscores">
-              <button v-for="status in (['all', 'ongoing', 'final'] as const)" :key="status" type="button" :class="{ 'is-active': gameStatus === status }" @click="gameStatus = status">
-                {{ status === 'all' ? 'All' : gameStatusLabel(status) }}
-              </button>
+      <div v-else-if="activeTab === 'boxscores'" class="cols">
+        <div class="card">
+          <header>
+            <h2>Boxscores</h2>
+            <div class="sp">
+              <div class="seg" role="group" aria-label="Filter games">
+                <button v-for="status in (['all', 'ongoing', 'final'] as const)" :key="status" type="button" :aria-pressed="gameStatus === status" @click="gameStatus = status">{{ status === 'all' ? 'All' : gameStatusLabel(status) }}</button>
+              </div>
+              <button v-if="overview?.isAdmin" type="button" class="btn pri sm" @click="gameFormOpen = true">Add game</button>
             </div>
-            <span class="ed-count">{{ visibleGames.length }} games</span>
-            <button v-if="overview?.isAdmin" type="button" class="ed-add-game" @click="gameFormOpen = true">
-              <AppIcon name="game" :size="15" /><span>Add Game</span>
-            </button>
-          </div>
-          <div v-if="visibleGames.length" class="ed-games">
-            <article v-for="game in visibleGames" :key="game.id" class="ed-game" :class="{ 'is-live': game.status === 'ongoing' }">
-              <div class="ed-game__date">
-                <small>{{ game.dateLabel?.split(',')[0] || 'Game' }}</small>
-                <b>{{ game.dateLabel?.split(',').slice(1).join(',') || 'TBD' }}</b>
-                <AppIcon name="calendar" :size="18" />
-              </div>
-              <div class="ed-game__body">
-                <div class="ed-game__heading">
-                  <span class="ed-status" :class="`is-${game.status}`">{{ gameStatusLabel(game.status) }}</span>
-                  <b>{{ game.name }}</b>
-                  <small>{{ game.timeLabel || 'Time TBD' }}</small>
+          </header>
+          <div class="pad">
+            <template v-if="visibleGames.length">
+              <article v-for="game in visibleGames" :key="game.id" class="game" :class="game.status === 'ongoing' ? 'on' : (game.status === 'final' ? 'fin' : '')">
+                <div class="grail">
+                  <span>{{ gameRail(game.dateLabel).dow || gameRail(game.dateLabel).mon }}</span>
+                  <b class="n">{{ gameRail(game.dateLabel).day }}</b>
+                  <span>{{ gameRail(game.dateLabel).mon }}</span>
                 </div>
-                <div class="ed-matchup">
-                  <span class="ed-team-mark">{{ initials(game.opponent.name) }}</span>
-                  <strong>{{ game.opponent.name }}</strong>
-                  <b>{{ game.opponent.score }}</b>
-                  <i></i>
-                  <b>{{ game.team.score }}</b>
-                  <TeamAvatar :name="game.team.name" :image-url="game.team.logoUrl ?? undefined" size="sm" />
-                  <strong>{{ game.team.name }}</strong>
+                <div class="gbody">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span class="chip" :class="gameChip(game.status)"><span v-if="game.status === 'ongoing'" class="live"></span>{{ gameStatusLabel(game.status) }}</span>
+                    <b style="font-size:14.5px">{{ game.name }}</b>
+                    <span v-if="game.timeLabel" class="n" style="margin-left:auto;font-size:12.5px;color:var(--mu)">{{ game.timeLabel }}</span>
+                    <div class="ed-game__menu" :style="game.timeLabel ? '' : 'margin-left:auto'" @click.stop>
+                      <button type="button" class="kebab" style="opacity:1" :aria-expanded="openGameMenu === game.id" aria-label="Game options" @click="toggleGameMenu(game.id)">⋯</button>
+                      <ul v-if="openGameMenu === game.id" class="ed-menu ed-game-menu">
+                        <li><button type="button" @click="openScoring(game)">Scoring</button></li>
+                        <template v-if="overview?.isAdmin">
+                          <li><button type="button" @click="editGame(game)">Edit game</button></li>
+                          <li><button type="button" @click="openLineup(game)">Lineup</button></li>
+                          <li><button type="button" class="is-danger" @click="deleteGame(game)">Delete game</button></li>
+                        </template>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="vs">
+                    <div class="t"><span class="av" style="width:26px;height:26px;font-size:9px">{{ initials(game.opponent.name) }}</span><span>{{ game.opponent.name }}</span></div>
+                    <div style="text-align:center">
+                      <span class="sc n" :class="{ d: game.status !== 'final', win: game.status === 'final' && game.opponent.score > game.team.score }">{{ game.opponent.score }}</span>
+                      <span class="mid" style="display:inline-block;padding:0 9px">–</span>
+                      <span class="sc n" :class="{ d: game.status !== 'final', win: game.status === 'final' && game.team.score > game.opponent.score }">{{ game.team.score }}</span>
+                      <div class="mid">{{ game.status === 'ongoing' ? 'in progress' : (game.status === 'final' ? 'final' : 'not started') }}</div>
+                    </div>
+                    <div class="t r"><TeamAvatar :name="game.team.name" :image-url="game.team.logoUrl ?? undefined" size="sm" /><span>{{ game.team.name }}</span></div>
+                  </div>
+                  <p v-if="game.venue" style="margin:8px 0 0;font-size:12px;color:var(--mu-2)">{{ game.venue }}</p>
                 </div>
-                <p v-if="game.venue"><AppIcon name="home" :size="14" />{{ game.venue }}</p>
-              </div>
-              <div class="ed-game__menu" @click.stop>
-                <button type="button" class="ed-icon-btn" :aria-expanded="openGameMenu === game.id" title="Game options" aria-label="Game options" @click="toggleGameMenu(game.id)"><AppIcon name="ellipsis" :size="18" /></button>
-                <ul v-if="openGameMenu === game.id" class="ed-menu ed-game-menu">
-                  <li><button type="button" @click="openScoring(game)"><AppIcon name="game" :size="15" /> Scoring</button></li>
-                  <template v-if="overview?.isAdmin">
-                    <li><button type="button" @click="editGame(game)"><AppIcon name="text" :size="15" /> Edit Game</button></li>
-                    <li><button type="button" @click="openLineup(game)"><AppIcon name="people" :size="15" /> Lineup</button></li>
-                    <li><button type="button" class="is-danger" @click="deleteGame(game)"><AppIcon name="close" :size="15" /> Delete Game</button></li>
-                  </template>
-                </ul>
-              </div>
-            </article>
+              </article>
+            </template>
+            <div v-else class="empty">
+              <span class="ring"><AppIcon name="game" :size="20" /></span>
+              <h3>No games here yet</h3>
+              <p>Games added to this event appear in this boxscore list.</p>
+              <button v-if="overview?.isAdmin" type="button" class="btn pri sm" @click="gameFormOpen = true">Add game</button>
+            </div>
           </div>
-          <div v-else class="ed-empty ed-empty--inside">
-            <AppIcon name="game" :size="34" /><h2>No games here yet</h2><p>Games added to this event will appear in this boxscore list.</p>
-            <button v-if="overview?.isAdmin" type="button" class="ed-add-game ed-add-game--cta" @click="gameFormOpen = true">
-              <AppIcon name="game" :size="15" /><span>Add Game</span>
-            </button>
-          </div>
-        </section>
+        </div>
 
-        <aside class="ed-side">
-          <section class="ed-panel ed-attendance">
-            <div class="ed-attendance__head">
-              <h2>Are you going?</h2>
-              <div class="ed-rsvp">
-                <button type="button" :disabled="attendanceSaving" :class="{ 'is-active': overview.attendance.currentStatus === 'going' }" @click="setAttendance('going')">Going</button>
-                <button type="button" :disabled="attendanceSaving" :class="{ 'is-active': overview.attendance.currentStatus === 'not_going' }" @click="setAttendance('not_going')">Not Going</button>
-                <button type="button" :disabled="attendanceSaving" :class="{ 'is-active': overview.attendance.currentStatus === 'maybe' }" @click="setAttendance('maybe')">Maybe</button>
+        <div class="stack-v">
+          <div class="card">
+            <header><h2>Are you going?</h2></header>
+            <div class="pad">
+              <div class="rsvp">
+                <button type="button" :disabled="attendanceSaving" :aria-pressed="overview.attendance.currentStatus === 'going'" @click="setAttendance('going')">Going</button>
+                <button type="button" :disabled="attendanceSaving" :aria-pressed="overview.attendance.currentStatus === 'maybe'" @click="setAttendance('maybe')">Maybe</button>
+                <button type="button" :disabled="attendanceSaving" :aria-pressed="overview.attendance.currentStatus === 'not_going'" @click="setAttendance('not_going')">Can't go</button>
+              </div>
+              <div class="sbar" style="margin-top:14px">
+                <div :style="{ width: goingPct + '%', background: 'var(--green)' }"></div>
+                <div :style="{ width: (100 - goingPct) + '%', background: 'var(--card-3)' }"></div>
+              </div>
+              <div class="keys">
+                <div><span class="sw" style="background:var(--green)"></span><span class="lb">Going</span><span class="pc n">{{ goingPct }}%</span><span class="vl n">{{ overview.attendance.counts.going }}</span></div>
+                <div><span class="sw" style="background:var(--card-3)"></span><span class="lb">Not responded</span><span class="vl n">{{ overview.attendance.counts.notResponded }}</span></div>
               </div>
             </div>
-            <div class="ed-roster-tabs">
+            <div class="ed-roster-tabs" style="padding:0 16px">
               <button type="button" :class="{ 'is-active': rosterView === 'going' }" @click="rosterView = 'going'">Going <b>{{ overview.attendance.counts.going }}</b></button>
-              <button type="button" :class="{ 'is-active': rosterView === 'not_responded' }" @click="rosterView = 'not_responded'">Not Responded <b>{{ overview.attendance.counts.notResponded }}</b></button>
+              <button type="button" :class="{ 'is-active': rosterView === 'not_responded' }" @click="rosterView = 'not_responded'">Not responded <b>{{ overview.attendance.counts.notResponded }}</b></button>
             </div>
-            <div class="ed-roster">
-              <div v-for="member in attendanceMembers.slice(0, 8)" :key="member.userId" class="ed-person">
-                <span v-if="!member.avatarUrl" class="ed-person__avatar">{{ initials(member.name) }}</span>
-                <img v-else :src="member.avatarUrl" :alt="member.name" />
-                <span><b>{{ member.name }}</b><small>{{ member.uniformNo ? `#${member.uniformNo} · ` : '' }}{{ member.role }}</small></span>
+            <div v-for="member in attendanceMembers.slice(0, 8)" :key="member.userId" class="mrow">
+              <span v-if="!member.avatarUrl" class="av" style="width:34px;height:34px;font-size:12px">{{ initials(member.name) }}</span>
+              <img v-else :src="member.avatarUrl" :alt="member.name" style="width:34px;height:34px;border-radius:50%;object-fit:cover" />
+              <div><div class="nm">{{ member.name }}</div><div class="rl">{{ member.uniformNo ? `#${member.uniformNo} · ` : '' }}{{ member.role }}</div></div>
+              <div class="sp">
                 <div class="ed-person__menu" @click.stop>
-                  <button
-                    type="button"
-                    class="ed-person__more"
-                    :aria-expanded="openMemberMenu === member.userId"
-                    aria-label="Member options"
-                    @click="toggleMemberMenu(member.userId)"
-                  ><AppIcon name="ellipsis" :size="17" /></button>
+                  <button type="button" class="kebab" :aria-expanded="openMemberMenu === member.userId" aria-label="Member options" @click="toggleMemberMenu(member.userId)">⋯</button>
                   <ul v-if="openMemberMenu === member.userId" class="ed-menu">
-                    <li><button type="button" @click="viewMemberStats(member.userId)">View Player Stats</button></li>
+                    <li><button type="button" @click="viewMemberStats(member.userId)">View player stats</button></li>
                     <template v-if="overview.isAdmin">
                       <li class="ed-menu__label">Set attendance</li>
                       <li><button type="button" @click="setMemberAttendance(member.userId, 'going')">Going</button></li>
-                      <li><button type="button" @click="setMemberAttendance(member.userId, 'not_going')">Not Going</button></li>
+                      <li><button type="button" @click="setMemberAttendance(member.userId, 'not_going')">Not going</button></li>
                       <li><button type="button" @click="setMemberAttendance(member.userId, 'maybe')">Maybe</button></li>
                     </template>
                   </ul>
                 </div>
               </div>
-              <p v-if="!attendanceMembers.length" class="ed-side-empty">No members in this group.</p>
             </div>
-          </section>
+            <p v-if="!attendanceMembers.length" style="margin:0;padding:0 16px 16px;color:var(--mu-2);font-size:13px">No members in this group.</p>
+          </div>
 
-          <section class="ed-panel ed-location">
-            <div class="ed-side-title">
-              <h2>{{ overview.location.type === 'online' ? 'Online Event' : 'Location' }}</h2>
-              <a v-if="overview.location.type !== 'online' && overview.location.label" :href="directionsUrl" target="_blank" rel="noopener">Get Directions</a>
+          <div class="card">
+            <header>
+              <h2>{{ overview.location.type === 'online' ? 'Online event' : 'Location' }}</h2>
+              <div v-if="overview.location.type !== 'online' && overview.location.label" class="sp"><a :href="directionsUrl" target="_blank" rel="noopener" style="font-size:12.5px">Directions</a></div>
+            </header>
+            <div class="pad">
+              <p v-if="overview.location.label" style="margin:0 0 11px;font-size:13px;line-height:1.55">{{ overview.location.label }}</p>
+              <a v-if="overview.location.type === 'online' && overview.location.onlineUrl" class="btn pri blk" :href="overview.location.onlineUrl" target="_blank" rel="noopener">Join online event</a>
+              <div v-if="mapUrl && overview.location.type !== 'online'" class="map"><iframe :src="mapUrl" title="Event location map" loading="lazy" style="width:100%;height:150px;border:0"></iframe></div>
+              <div v-if="overview.director.name" style="border-top:1px solid var(--line);padding-top:12px;margin-top:12px;display:flex;flex-direction:column;gap:2px">
+                <small style="color:var(--mu)">Event director</small><b>{{ overview.director.name }}</b>
+                <a v-if="overview.director.email" :href="`mailto:${overview.director.email}`" style="font-size:12.5px">{{ overview.director.email }}</a>
+              </div>
             </div>
-            <p v-if="overview.location.label"><AppIcon name="home" :size="16" />{{ overview.location.label }}</p>
-            <a v-if="overview.location.type === 'online' && overview.location.onlineUrl" class="ed-join-link" :href="overview.location.onlineUrl" target="_blank" rel="noopener"><AppIcon name="message" :size="17" />Join online event</a>
-            <iframe v-if="mapUrl && overview.location.type !== 'online'" :src="mapUrl" title="Event location map" loading="lazy"></iframe>
-            <div v-else-if="overview.location.type !== 'online'" class="ed-map-empty"><AppIcon name="home" :size="26" /><span>Map coordinates are not available.</span></div>
-            <div v-if="overview.director.name" class="ed-director">
-              <small>Event Director</small><b>{{ overview.director.name }}</b>
-              <a v-if="overview.director.email" :href="`mailto:${overview.director.email}`">{{ overview.director.email }}</a>
-            </div>
-          </section>
-        </aside>
+          </div>
+        </div>
       </div>
 
       <section v-else class="ed-stats-view">
