@@ -712,52 +712,34 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="team-detail">
-    <section
-      v-if="detail"
-      class="condensed-team-header team-detail__condensed"
-      :class="{ 'condensed-team-header--visible': condensedHeaderVisible }"
-    >
-      <div class="condensed-team-header__main">
-        <div class="condensed-team-header__top">
-          <TeamAvatar :name="detail.name" :image-url="detail.logoUrl ?? undefined" size="md" />
-          <span class="condensed-team-header__name">{{ detail.name }}</span>
+  <main class="team-detail rd">
+    <!-- Sticky identity bar (single 64px header; replaces the old hero +
+         condensed header per the redesign spec). -->
+    <div class="bar"><div class="bar-in">
+      <template v-if="loadingHeader">
+        <span class="shimmer-circle td-sk__avatar" aria-hidden="true"></span>
+        <span class="shimmer-block td-sk__title" aria-hidden="true"></span>
+      </template>
+      <template v-else>
+        <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="md" />
+        <div class="id">
+          <h1>{{ detail?.name || 'Team' }}</h1>
+          <p>
+            <span v-if="detail?.ageGenderLabel || detail?.categoryLabel">{{ [detail?.ageGenderLabel, detail?.categoryLabel].filter(Boolean).join(' · ') }}</span>
+            <span v-if="association">· {{ association.name }}<template v-if="association.registrationNo"> #{{ association.registrationNo }}</template></span>
+          </p>
         </div>
-        <div class="condensed-team-header__subline">{{ [detail.ageGenderLabel, detail.categoryLabel].filter(Boolean).join(' · ') }}</div>
-      </div>
-    </section>
-
-    <section class="team-detail__hero">
-      <div class="team-detail__identity">
-        <div class="team-heading">
-          <template v-if="loadingHeader">
-            <span class="shimmer-circle td-sk__avatar" aria-hidden="true"></span>
-            <span class="shimmer-block td-sk__title" aria-hidden="true"></span>
-          </template>
-          <template v-else>
-            <TeamAvatar :name="detail?.name || 'Team'" :image-url="detail?.logoUrl ?? undefined" size="lg" />
-            <div class="team-detail__identity-copy">
-              <h1>{{ detail?.name || 'Team' }}</h1>
-              <p v-if="detail && (detail.categoryLabel || detail.ageGenderLabel)" class="hero-team-meta">
-                {{ [detail.ageGenderLabel, detail.categoryLabel].filter(Boolean).join(' · ') }}
-              </p>
-              <p v-if="association" class="team-detail__assoc">
-                <span>{{ association.name }}</span>
-                <span v-if="association.registrationNo" class="team-detail__assoc-reg">· #{{ association.registrationNo }}</span>
-              </p>
-            </div>
-          </template>
+        <div class="rec">
+          <span class="n"><b :class="{ z: !detail?.stats.games }">{{ detail?.stats.games ?? 0 }}</b><i>GP</i></span>
+          <span class="n"><b :class="detail?.stats.won ? 'w' : 'z'">{{ detail?.stats.won ?? 0 }}</b><i>W</i></span>
+          <span class="n"><b :class="detail?.stats.lost ? 'l' : 'z'">{{ detail?.stats.lost ?? 0 }}</b><i>L</i></span>
         </div>
-      </div>
-
-      <div ref="settingsWrap" class="team-detail__hero-actions" @click.stop>
-          <button type="button" class="td-hero-btn" @click="openTeamMessage">
-            <span class="td-asset-icon td-asset-icon--chat" aria-hidden="true"></span>
-            <span>Message Team</span>
-          </button>
-          <button type="button" class="td-hero-btn" :class="{ 'is-active': settingsOpen }" @click="openTeamSettings">
+        <button type="button" class="btn" @click="openTeamMessage">
+          <span class="td-asset-icon td-asset-icon--chat" aria-hidden="true"></span>Message team
+        </button>
+        <div ref="settingsWrap" class="team-detail__settings-wrap" @click.stop>
+          <button type="button" class="btn ic" :class="{ 'is-active': settingsOpen }" aria-label="Team settings" @click="openTeamSettings">
             <span class="td-asset-icon td-asset-icon--settings" aria-hidden="true"></span>
-            <span>Settings</span>
           </button>
           <div v-if="settingsOpen" class="td-settings-menu">
             <div class="td-settings-menu__section">
@@ -810,27 +792,21 @@ onBeforeUnmount(() => {
               Created by {{ detail.createdByName }}
             </p>
           </div>
-      </div>
+        </div>
+      </template>
+    </div></div>
 
-      <div class="team-detail__record">
-        <span class="team-detail__record-item"><b>{{ detail?.stats.games ?? 0 }}</b><small>Games</small></span>
-        <span class="team-detail__record-item team-detail__record-item--won"><b>{{ detail?.stats.won ?? 0 }}</b><small>Won</small></span>
-        <span class="team-detail__record-item team-detail__record-item--lost"><b>{{ detail?.stats.lost ?? 0 }}</b><small>Lost</small></span>
-      </div>
-    </section>
-
-    <nav class="team-detail__tabs" role="tablist">
+    <div class="shell">
+    <nav class="tabs" role="tablist">
       <button
         v-for="(t, index) in TABS"
         :key="t.key"
         type="button"
-        class="team-detail__tab"
-        :class="{ 'team-detail__tab--active': activeTab === t.key }"
         role="tab"
         :aria-selected="activeTab === t.key"
         @click="setTab(t.key)"
       >
-        <AppIcon :name="(['calendar', 'people', 'document', 'award'] as const)[index]" :size="16" />
+        <AppIcon :name="(['calendar', 'people', 'document', 'award'] as const)[index]" :size="15" />
         {{ t.label }}
       </button>
     </nav>
@@ -1260,6 +1236,7 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </section>
+    </div>
 
     <InviteToTeamModal
       v-if="teamId && detail"
@@ -1405,14 +1382,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.team-detail {
-  width: min(100%, 1380px);
-  margin: 0 auto;
-  padding: 22px 24px 48px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
+/* Redesign shell: `.bar` is full-bleed sticky, `.shell` centers content. */
+.team-detail { width: 100%; margin: 0; padding: 0; display: block; }
+/* Pin the sticky bar below the member top bar (56px desktop / 52px mobile). */
+.team-detail .bar { top: 56px; }
+.team-detail__settings-wrap { position: relative; }
+@media (max-width: 720px) { .team-detail .bar { top: 52px; } }
 
 .team-detail__hero {
   position: relative;

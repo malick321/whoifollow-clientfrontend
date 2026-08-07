@@ -49,7 +49,7 @@
 .rd .eyebrow{font:600 10.5px var(--f);letter-spacing:.12em;text-transform:uppercase;color:var(--mu)}
 
 /* ── top bar ─────────────────────────────────────── */
-.rd .bar{position:sticky;top:0;z-index:40;background:rgba(11,15,18,.93);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.rd .bar{position:sticky;top:0;z-index:40;background:var(--surface-chrome);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .rd .bar-in{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px}
 .rd .av{border-radius:50%;flex:none;display:grid;place-items:center;font-weight:600;color:#fff;background:var(--surface-raised)}
 .rd .av.ring{border:1.5px solid var(--blue)}
