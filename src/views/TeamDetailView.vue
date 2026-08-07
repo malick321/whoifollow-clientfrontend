@@ -354,6 +354,17 @@ function eventTone(status: string): 'success' | 'neutral' | 'secondary' {
   if (status === 'Completed') return 'secondary'
   return 'neutral'
 }
+// Redesign helpers: status chip class (amber for ongoing per the design rules)
+// and a compact date rail parsed from the range label.
+function eventChip(status: string): 'a' | 'n' | 'b' {
+  if (status === 'Ongoing') return 'a'
+  if (status === 'Completed') return 'n'
+  return 'b'
+}
+function eventRail(label: string): { day: string; mon: string } {
+  const m = String(label || '').match(/([A-Za-z]{3,})\s+(\d{1,2})/)
+  return m ? { mon: m[1].slice(0, 3), day: m[2] } : { mon: '', day: '—' }
+}
 
 function openEventDetail(eventId: string) {
   router.push({ name: 'team-event-detail', params: { teamId: teamId.value, eventId } })
@@ -834,127 +845,94 @@ onBeforeUnmount(() => {
 
       <!-- Events -->
       <template v-else-if="activeTab === 'events'">
-        <div class="td-tab-heading">
-          <span class="td-tab-heading__icon"><AppIcon name="calendar" :size="24" /></span>
-          <span>
-            <h2>Events</h2>
-            <p>Explore upcoming competitions, matches and showcases.</p>
-          </span>
-          <button
-            v-if="detail?.isAdmin"
-            type="button"
-            class="association-users__invite-btn td-tab-heading__action"
-            @click="openCreateEvent"
-          >
-            <span class="association-users__invite-icon association-teams__create-icon" aria-hidden="true"></span>
-            <span>Add Event</span>
-          </button>
-        </div>
-        <div class="td-content-grid">
-          <section class="td-content-card td-content-card--main">
-        <div class="association-teams__filters td-events-filters">
-          <MultiSelectDropdown v-model="filterYearArr" :options="eventYears" placeholder="Year" single :searchable="false" aria-label="Year" />
-          <MultiSelectDropdown v-model="filterTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
-          <MultiSelectDropdown v-model="filterAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
-          <MultiSelectDropdown v-model="filterStateArr" :options="eventStates" placeholder="State" single :searchable="false" aria-label="State" />
-          <button
-            type="button"
-            class="association-events__past-toggle"
-            :class="{ 'association-events__past-toggle--on': showPast }"
-            :disabled="pastEventsLocked"
-            role="switch"
-            :aria-checked="showPast ? 'true' : 'false'"
-            @click="showPast = !showPast"
-          >Past Events</button>
-          <button v-if="eventFiltersChanged" type="button" class="td-events-reset" @click="resetEventFilters">
-            <AppIcon name="task" :size="15" />Reset Filters
-          </button>
-        </div>
-        <ul v-if="filteredEvents.length" class="team-detail__events">
-          <li
-            v-for="ev in filteredEvents"
-            :key="ev.id"
-            class="td-event td-event--clickable"
-            role="link"
-            tabindex="0"
-            @click="openEventDetail(ev.id)"
-            @keydown.enter="openEventDetail(ev.id)"
-          >
-            <div class="td-event__top">
-              <StatusBadge :label="ev.statusLabel" :tone="eventTone(ev.statusLabel)" />
-              <span class="td-event__date">{{ ev.dateRangeLabel }}</span>
+        <div class="cols">
+          <div class="card">
+            <header>
+              <h2>Events</h2>
+              <span class="cnt">{{ events.length }} {{ events.length === 1 ? 'event' : 'events' }}</span>
+              <div class="sp">
+                <button v-if="detail?.isAdmin" type="button" class="btn pri sm" @click="openCreateEvent">Add event</button>
+              </div>
+            </header>
+            <div class="filters">
+              <MultiSelectDropdown v-model="filterYearArr" :options="eventYears" placeholder="Year" single :searchable="false" aria-label="Year" />
+              <MultiSelectDropdown v-model="filterTypeArr" :options="eventTypes" placeholder="Type" single :searchable="false" aria-label="Type" />
+              <MultiSelectDropdown v-model="filterAssocArr" :options="eventAssocs" placeholder="Association" single :searchable="false" aria-label="Association" />
+              <MultiSelectDropdown v-model="filterStateArr" :options="eventStates" placeholder="State" single :searchable="false" aria-label="State" />
+              <div class="seg push" role="group" aria-label="Time range">
+                <button type="button" :aria-pressed="!showPast" @click="showPast = false">Current</button>
+                <button type="button" :aria-pressed="showPast" :disabled="pastEventsLocked" @click="showPast = true">Past</button>
+              </div>
+              <button v-if="eventFiltersChanged" type="button" class="clr" @click="resetEventFilters">Clear</button>
             </div>
-            <h3 class="td-event__name">{{ ev.name }}</h3>
-            <p v-if="ev.association || ev.eventType" class="td-event__sub">
-              {{ [ev.association, ev.eventType].filter(Boolean).join(' · ') }}
-            </p>
-            <p v-if="ev.locationType === 'online'" class="td-event__loc">
-              <AppIcon name="message" :size="13" />
-              {{ ev.mediumTypeLabel || 'Online event' }}
-            </p>
-            <p v-else-if="ev.location" class="td-event__loc"><AppIcon name="home" :size="13" /> {{ ev.location }}</p>
-            <p v-if="ev.directorName" class="td-event__director">
-              <AppIcon name="people" :size="13" />
-              Director: {{ ev.directorName }}
-              <span v-if="ev.directorEmail">· {{ ev.directorEmail }}</span>
-            </p>
-            <div v-if="ev.goingCount || ev.record" class="td-event__foot">
-              <span v-if="ev.goingCount" class="td-event__going">
-                <AppIcon name="people" :size="13" /> {{ ev.goingCount }} going
-              </span>
-              <span v-if="ev.record" class="td-event__record">
-                <span><b>{{ ev.record.games }}</b> Games</span>
-                <span><b>{{ ev.record.won }}</b> Won</span>
-                <span><b>{{ ev.record.lost }}</b> Lost</span>
-              </span>
+
+            <template v-if="filteredEvents.length">
+              <button
+                v-for="ev in filteredEvents"
+                :key="ev.id"
+                type="button"
+                class="erow"
+                @click="openEventDetail(ev.id)"
+              >
+                <div class="rail"><b class="n">{{ eventRail(ev.dateRangeLabel).day }}</b><span>{{ eventRail(ev.dateRangeLabel).mon }}</span></div>
+                <div class="ebody">
+                  <span class="chip" :class="eventChip(ev.statusLabel)"><span v-if="ev.statusLabel === 'Ongoing'" class="live"></span>{{ ev.statusLabel }}</span>
+                  <h3>{{ ev.name }}</h3>
+                  <div class="meta">
+                    <span>{{ ev.dateRangeLabel }}</span>
+                    <span v-if="ev.locationType === 'online'">{{ ev.mediumTypeLabel || 'Online event' }}</span>
+                    <span v-else-if="ev.location">{{ ev.location }}</span>
+                    <span v-if="ev.directorName">Director: {{ ev.directorName }}</span>
+                    <span v-if="ev.eventType" class="chip n">{{ ev.eventType }}</span>
+                  </div>
+                  <div v-if="ev.goingCount" class="meta" style="margin-top:8px">
+                    <span style="color:var(--mu)">{{ ev.goingCount }} going</span>
+                  </div>
+                </div>
+                <div class="eright">
+                  <span v-if="ev.record" class="mini"><b class="n">{{ ev.record.games }}</b>&nbsp;G&nbsp;·&nbsp;<b class="n">{{ ev.record.won }}</b>&nbsp;W&nbsp;·&nbsp;<b class="n">{{ ev.record.lost }}</b>&nbsp;L</span>
+                  <span class="btn sm">Open ›</span>
+                </div>
+              </button>
+            </template>
+            <div v-else class="empty">
+              <span class="ring"><AppIcon name="calendar" :size="20" /></span>
+              <h3>{{ events.length ? 'No matching events' : 'No events yet' }}</h3>
+              <p>{{ events.length ? 'No events match the current filters. Try broadening them.' : 'This team has not been added to any events yet.' }}</p>
+              <button v-if="!events.length && detail?.isAdmin" type="button" class="btn pri sm" @click="openCreateEvent">Add event</button>
             </div>
-          </li>
-        </ul>
-        <div v-else class="matchgeni-placeholder">
-          <h3 class="matchgeni-placeholder__title">{{ events.length ? 'No matching events' : 'No events yet' }}</h3>
-          <p class="matchgeni-placeholder__copy">{{ events.length ? 'No events match the current filters. Try broadening them.' : 'This team has not been added to any events yet.' }}</p>
-          <button
-            v-if="!events.length && detail?.isAdmin"
-            type="button"
-            class="association-users__invite-btn td-placeholder-action"
-            @click="openCreateEvent"
-          >
-            <span class="association-users__invite-icon association-teams__create-icon" aria-hidden="true"></span>
-            <span>Create the first event</span>
-          </button>
-        </div>
-          </section>
-          <aside class="td-side-stack">
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Upcoming Highlights</h3><span>{{ events.length }} events</span></div>
-              <div v-if="events.length" class="td-highlight-list">
-                <button v-for="event in events.slice(0, 3)" :key="`highlight-${event.id}`" type="button" class="td-highlight" @click="openEventDetail(event.id)">
-                  <span class="td-highlight__icon"><AppIcon name="trophy" :size="17" /></span>
-                  <span><b>{{ event.name }}</b><small>{{ event.dateRangeLabel }}</small></span>
-                  <StatusBadge :label="event.statusLabel" :tone="eventTone(event.statusLabel)" />
+          </div>
+
+          <div class="stack-v">
+            <div class="card">
+              <header><h2>Upcoming highlights</h2><span class="cnt">{{ events.length }} events</span></header>
+              <div v-if="events.length">
+                <button v-for="event in events.slice(0, 3)" :key="`hl-${event.id}`" type="button" class="qa" @click="openEventDetail(event.id)">
+                  <span class="ico"><AppIcon name="trophy" :size="15" /></span>
+                  <span><b>{{ event.name }}</b><span>{{ event.dateRangeLabel }}</span></span>
+                  <span class="ch">›</span>
                 </button>
               </div>
-              <p v-else class="td-side-empty">Highlights appear when events are added.</p>
-            </section>
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Attendance Overview</h3><span>This year</span></div>
-              <div class="td-attendance">
-                <div class="td-mini-ring"><b>{{ events.reduce((sum, event) => sum + (event.goingCount || 0), 0) }}</b><small>Total going</small></div>
-                <div class="td-attendance__copy">
-                  <span><i class="is-green"></i>Going <b>{{ events.reduce((sum, event) => sum + (event.goingCount || 0), 0) }}</b></span>
-                  <span><i class="is-blue"></i>Events <b>{{ events.length }}</b></span>
-                  <span><i class="is-violet"></i>Past <b>{{ events.filter((event) => event.statusLabel === 'Completed').length }}</b></span>
+              <div v-else class="pad"><p style="margin:0;color:var(--mu-2);font-size:13px">Highlights appear when events are added.</p></div>
+            </div>
+
+            <div class="card">
+              <header><h2>Attendance</h2><span class="cnt">this year</span></header>
+              <div class="pad">
+                <div class="keys" style="margin-top:0">
+                  <div><span class="sw" style="background:var(--green)"></span><span class="lb">Going</span><span class="vl n">{{ events.reduce((sum, event) => sum + (event.goingCount || 0), 0) }}</span></div>
+                  <div><span class="sw" style="background:var(--blue)"></span><span class="lb">Events</span><span class="vl n">{{ events.length }}</span></div>
+                  <div><span class="sw" style="background:var(--mu)"></span><span class="lb">Completed</span><span class="vl n">{{ events.filter((event) => event.statusLabel === 'Completed').length }}</span></div>
                 </div>
               </div>
-            </section>
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Quick Actions</h3></div>
-              <div class="td-quick-actions">
-                <button type="button" @click="router.push({ name: 'calendar' })"><AppIcon name="calendar" :size="20" /><span>View Calendar</span></button>
-                <button type="button" @click="printTeamInfo"><AppIcon name="document" :size="20" /><span>Print Schedule</span></button>
-              </div>
-            </section>
-          </aside>
+            </div>
+
+            <div class="card">
+              <header><h2>Quick actions</h2></header>
+              <button type="button" class="qa" @click="router.push({ name: 'calendar' })"><span class="ico"><AppIcon name="calendar" :size="15" /></span><span><b>View calendar</b><span>See the full schedule</span></span><span class="ch">›</span></button>
+              <button type="button" class="qa" @click="printTeamInfo"><span class="ico"><AppIcon name="document" :size="15" /></span><span><b>Print schedule</b><span>Printable team info</span></span><span class="ch">›</span></button>
+            </div>
+          </div>
         </div>
       </template>
 
