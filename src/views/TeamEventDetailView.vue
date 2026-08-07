@@ -76,6 +76,10 @@ const visiblePlayers = computed(() => {
     })
 })
 const playerRoles = computed(() => [...new Set(players.value.map((player) => player.role).filter(Boolean))])
+// "Never rank a tied field": all visible players share the same OBP.
+const playersTied = computed(() =>
+  visiblePlayers.value.length > 1 && visiblePlayers.value.every((p) => p.onbase === visiblePlayers.value[0].onbase)
+)
 const teamOpponents = computed(() => [...new Set(teamStats.value.games.map((game) => game.opponentName).filter(Boolean))].sort())
 const visibleTeamGames = computed(() => {
   let rows = [...teamStats.value.games]
@@ -537,115 +541,125 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <section v-else class="ed-stats-view">
-        <div v-if="activeTab === 'player-stats'" class="ed-stats-toolbar ed-stats-toolbar--player">
-          <label class="ed-select-control">
-            <span><AppIcon name="people" :size="15" /><small>Lineup Type</small></span>
-            <select v-model="playerLineup" aria-label="Lineup type"><option value="all">All Lineups</option></select>
-          </label>
-          <label class="ed-select-control">
-            <span><AppIcon name="award" :size="15" /><small>Role</small></span>
-            <select v-model="playerRole" aria-label="Player role">
-              <option value="all">All Roles</option>
-              <option v-for="role in playerRoles" :key="role" :value="role">{{ role }}</option>
-            </select>
-          </label>
-          <label class="ed-select-control">
-            <span><AppIcon name="text" :size="15" /><small>Sort By</small></span>
-            <select v-model="playerSort" aria-label="Sort player statistics">
-              <option value="games">Games Played</option><option value="onbase">Onbase %</option><option value="average">Average</option><option value="hr">Home Runs</option><option value="rbi">RBI</option>
-            </select>
-          </label>
-          <label class="ed-select-control">
-            <span><AppIcon name="document" :size="15" /><small>View</small></span>
-            <select v-model="playerView" aria-label="Statistics view"><option value="standard">Standard</option><option value="compact">Compact</option></select>
-          </label>
-          <div class="ed-toolbar-spacer"></div>
-          <div class="ed-search">
-            <AppIcon name="search" :size="16" /><input v-model="playerSearch" type="search" placeholder="Search players..." aria-label="Search players" />
+      <template v-else>
+        <!-- ── Player statistics ── -->
+        <template v-if="activeTab === 'player-stats'">
+          <div class="filters solo">
+            <div class="fld"><label>Role</label><select v-model="playerRole" aria-label="Player role"><option value="all">All roles</option><option v-for="role in playerRoles" :key="role" :value="role">{{ role }}</option></select></div>
+            <div class="fld"><label>Sort by</label><select v-model="playerSort" aria-label="Sort player statistics"><option value="games">Games played</option><option value="onbase">On-base %</option><option value="average">Average</option><option value="hr">Home runs</option><option value="rbi">RBI</option></select></div>
+            <div class="fld"><label>View</label><select v-model="playerView" aria-label="Statistics view"><option value="standard">Standard</option><option value="compact">Compact</option></select></div>
+            <div class="fld" style="margin-left:auto"><label>&nbsp;</label><div style="display:flex;gap:8px">
+              <input v-model="playerSearch" type="text" placeholder="Search players" aria-label="Search players" style="width:180px" />
+              <button type="button" class="btn sm" @click="resetPlayerFilters">Reset</button>
+              <button type="button" class="btn pri sm" @click="exportPlayerStats">Export</button>
+            </div></div>
           </div>
-          <button type="button" class="ed-square-btn" title="Reset filters" aria-label="Reset filters" @click="resetPlayerFilters"><AppIcon name="task" :size="18" /></button>
-          <button type="button" class="ed-export-btn" @click="exportPlayerStats"><AppIcon name="document" :size="17" />Export</button>
-        </div>
-        <div v-else class="ed-stats-toolbar ed-stats-toolbar--team">
-          <label class="ed-select-control">
-            <small>Scope</small>
-            <select aria-label="Statistics scope"><option>Event</option></select>
-          </label>
-          <label class="ed-select-control">
-            <small>Date Range</small>
-            <select v-model="teamDateRange" aria-label="Date range"><option value="all">All Games</option><option value="last3">Last 3 Games</option><option value="last7">Last 7 Games</option></select>
-          </label>
-          <label class="ed-select-control">
-            <small>Split</small>
-            <select v-model="teamSplit" aria-label="Result split"><option value="all">All</option><option value="won">Won</option><option value="lost">Lost</option></select>
-          </label>
-          <label class="ed-select-control ed-select-control--wide">
-            <small>Opponent</small>
-            <select v-model="teamOpponent" aria-label="Opponent"><option value="all">All</option><option v-for="opponent in teamOpponents" :key="opponent" :value="opponent">{{ opponent }}</option></select>
-          </label>
-          <div class="ed-toolbar-spacer"></div>
-          <button type="button" class="ed-reset-btn" @click="resetTeamFilters"><AppIcon name="task" :size="17" />Reset Filters</button>
-        </div>
 
-        <div class="ed-metrics">
-          <article v-for="metric in metricCards" :key="metric.label" :class="`is-${metric.tone}`">
-            <span><AppIcon :name="metric.icon" :size="20" /></span>
-            <div><small>{{ metric.label }}</small><b>{{ metric.value }}</b><p>{{ metric.hint }}</p></div>
-          </article>
-        </div>
+          <div class="metrics">
+            <div v-for="metric in metricCards" :key="metric.label" class="m"><span class="k">{{ metric.label }}</span><span class="v n" :class="{ none: metric.value === '—' }">{{ metric.value }}</span><span class="s">{{ metric.hint }}</span></div>
+          </div>
 
-        <div v-if="activeTab === 'player-stats'" class="ed-player-grid">
-          <section class="ed-panel ed-table-panel">
-            <div class="ed-side-title"><h2>Player Statistics</h2><span>{{ visiblePlayers.length }} players</span></div>
-            <div class="ed-table-scroll">
-              <table :class="{ 'is-compact': playerView === 'compact' }">
-                <thead><tr><th>Player</th><th>Games</th><th>Onbase %</th><th>Average</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>R</th></tr></thead>
-                <tbody>
-                  <tr v-for="(player, index) in visiblePlayers" :key="player.userId">
-                    <td><span class="ed-rank">{{ index + 1 }}</span><span v-if="!player.avatarUrl" class="ed-table-avatar">{{ initials(player.name) }}</span><img v-else :src="player.avatarUrl" :alt="player.name" /><span><b>{{ player.name }}</b><small>{{ player.role }}</small></span></td>
-                    <td>{{ player.games }}</td><td>{{ player.onbase }}</td><td>{{ player.average }}</td><td>{{ player.ab }}</td><td>{{ player.h }}</td><td>{{ player.hr }}</td><td>{{ player.rbi }}</td><td>{{ player.runs }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div v-if="!visiblePlayers.length" class="ed-empty ed-empty--inside"><h2>No player statistics yet</h2><p>Completed scoresheets will populate this table.</p></div>
-          </section>
-          <aside class="ed-side">
-            <section class="ed-panel ed-top-list"><div class="ed-side-title"><h2>Top Performers</h2></div><div v-for="(player, index) in visiblePlayers.slice(0, 5)" :key="player.userId" class="ed-top-row"><b>{{ index + 1 }}</b><span>{{ player.name }}</span><strong>{{ player.onbase }}<small>Onbase %</small></strong></div></section>
-            <section class="ed-panel ed-chart-card"><div class="ed-side-title"><h2>Performance Trend</h2><span>Event</span></div><svg viewBox="0 0 760 120" role="img" aria-label="Performance trend"><polyline :points="chartLines.onbase" class="line-blue" /><polyline :points="chartLines.average" class="line-violet" /></svg><div class="ed-legend"><span><i class="is-blue"></i>Onbase %</span><span><i class="is-violet"></i>Average</span></div></section>
-          </aside>
-        </div>
-
-        <template v-else>
-          <div class="ed-team-insights">
-            <section class="ed-panel ed-performance">
-              <div class="ed-side-title"><h2>Team Performance Trend</h2><span>All event games</span></div>
-              <svg viewBox="0 0 760 120" role="img" aria-label="Team performance trend"><line v-for="n in 4" :key="n" x1="20" :y1="n * 24" x2="740" :y2="n * 24" /><polyline :points="chartLines.onbase" class="line-blue" /><polyline :points="chartLines.average" class="line-violet" /></svg>
-              <div class="ed-legend"><span><i class="is-blue"></i>Onbase %</span><span><i class="is-violet"></i>Average</span></div>
-            </section>
-            <section class="ed-panel ed-offense">
-              <div class="ed-side-title"><h2>Offense Breakdown</h2></div>
-              <div class="ed-offense__body">
-                <div class="ed-donut" :style="offenseStyle"><span><b>{{ activeStats.h.toLocaleString() }}</b><small>Total Hits</small></span></div>
-                <div class="ed-offense__legend"><span><i class="is-blue"></i>Singles <b>{{ activeStats.oneB }}</b></span><span><i class="is-violet"></i>Doubles <b>{{ activeStats.twoB }}</b></span><span><i class="is-yellow"></i>Triples <b>{{ activeStats.threeB }}</b></span><span><i class="is-green"></i>Home Runs <b>{{ activeStats.hr }}</b></span></div>
+          <div class="cols">
+            <div class="card">
+              <header><h2>Player statistics</h2><span class="cnt">{{ visiblePlayers.length }} players</span></header>
+              <div v-if="visiblePlayers.some((p) => Number(p.h) > 0 && !Number(p.ab))" class="note">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.8"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                <p>Averages are hidden for players with hits but zero at-bats — the rate can't be computed until the boxscore is corrected.</p>
               </div>
-            </section>
-          </div>
-          <section class="ed-panel ed-table-panel">
-            <div class="ed-side-title"><h2>Event Team Statistics</h2><span>{{ visibleTeamGames.length }} games</span></div>
-            <div class="ed-table-scroll">
-              <table class="ed-team-table">
-                <thead><tr><th>Game</th><th>Result</th><th>Onbase %</th><th>Average</th><th>AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>R</th><th>BB</th></tr></thead>
-                <tbody>
-                  <tr v-for="game in visibleTeamGames" :key="game.gameId"><td><b>{{ game.opponentName }}</b><small>{{ game.dateLabel }}</small></td><td><span class="ed-result" :class="game.result === 'won' ? 'is-won' : 'is-lost'">{{ game.result || 'Pending' }}</span></td><td>{{ game.onbase }}</td><td>{{ game.average }}</td><td>{{ game.ab }}</td><td>{{ game.h }}</td><td>{{ game.oneB }}</td><td>{{ game.twoB }}</td><td>{{ game.threeB }}</td><td>{{ game.hr }}</td><td>{{ game.rbi }}</td><td>{{ game.runs }}</td><td>{{ game.bb }}</td></tr>
-                </tbody>
-              </table>
+              <div v-if="visiblePlayers.length" class="tw">
+                <table>
+                  <thead><tr><th class="l">Player</th><th>G</th><th>AB</th><th>H</th><th>HR</th><th>RBI</th><th>R</th><th class="split">AVG</th><th>OBP</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(player, index) in visiblePlayers" :key="player.userId" :class="{ top: index === 0 && !playersTied }">
+                      <td class="l"><span class="rank n">{{ index + 1 }}</span>{{ player.name }}</td>
+                      <td class="n" :class="{ z: !Number(player.games) }">{{ player.games }}</td>
+                      <td class="n" :class="{ z: !Number(player.ab) }">{{ player.ab }}</td>
+                      <td class="n" :class="{ z: !Number(player.h) }">{{ player.h }}</td>
+                      <td class="n" :class="{ z: !Number(player.hr) }">{{ player.hr }}</td>
+                      <td class="n" :class="{ z: !Number(player.rbi) }">{{ player.rbi }}</td>
+                      <td class="n" :class="{ z: !Number(player.runs) }">{{ player.runs }}</td>
+                      <td class="n split" :class="{ z: !Number(player.ab) }">{{ Number(player.ab) ? player.average : '—' }}</td>
+                      <td class="n" :class="{ z: !Number(player.ab) }">{{ Number(player.ab) ? player.onbase : '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="empty"><span class="ring"><AppIcon name="document" :size="20" /></span><h3>No player statistics yet</h3><p>Completed scoresheets populate this table.</p></div>
             </div>
-            <div v-if="!visibleTeamGames.length" class="ed-empty ed-empty--inside"><h2>{{ teamStats.games.length ? 'No matching games' : 'No team statistics yet' }}</h2><p>{{ teamStats.games.length ? 'Reset or change the filters to see more games.' : 'Completed scoresheets will populate this event table.' }}</p></div>
-          </section>
+            <div class="card">
+              <header><h2>Top performers</h2></header>
+              <div v-if="visiblePlayers.length && !playersTied" class="pad"><div class="keys" style="margin-top:0"><div v-for="(player, index) in visiblePlayers.slice(0, 5)" :key="player.userId"><span class="rank n">{{ index + 1 }}</span><span class="lb">{{ player.name }}</span><span class="vl n">{{ player.onbase }}</span></div></div></div>
+              <div v-else class="empty"><span class="ring"><AppIcon name="award" :size="20" /></span><h3>No ranking yet</h3><p>Every player shares the same rate, so a leaderboard would just be alphabetical. It fills in once at-bats are recorded.</p></div>
+            </div>
+          </div>
         </template>
-      </section>
+
+        <!-- ── Team statistics ── -->
+        <template v-else>
+          <div class="filters solo">
+            <div class="fld"><label>Date range</label><select v-model="teamDateRange" aria-label="Date range"><option value="all">All games</option><option value="last3">Last 3 games</option><option value="last7">Last 7 games</option></select></div>
+            <div class="fld"><label>Split</label><select v-model="teamSplit" aria-label="Result split"><option value="all">All</option><option value="won">Won</option><option value="lost">Lost</option></select></div>
+            <div class="fld"><label>Opponent</label><select v-model="teamOpponent" aria-label="Opponent"><option value="all">All</option><option v-for="opponent in teamOpponents" :key="opponent" :value="opponent">{{ opponent }}</option></select></div>
+            <div class="fld" style="margin-left:auto"><label>&nbsp;</label><button type="button" class="btn sm" @click="resetTeamFilters">Reset</button></div>
+          </div>
+
+          <div class="metrics six">
+            <div v-for="metric in metricCards" :key="metric.label" class="m"><span class="k">{{ metric.label }}</span><span class="v n" :class="{ none: metric.value === '—' }">{{ metric.value }}</span><span class="s">{{ metric.hint }}</span></div>
+          </div>
+
+          <div class="cols">
+            <div class="card">
+              <header><h2>Performance trend</h2><div class="sp"><div class="legend"><span><i style="background:var(--blue)"></i>On-base %</span><span><i style="background:var(--purple)"></i>Average</span></div></div></header>
+              <div v-if="visibleTeamGames.length >= 3" class="pad">
+                <svg viewBox="0 0 760 120" role="img" aria-label="Team performance trend" style="width:100%;height:auto"><polyline :points="chartLines.onbase" fill="none" stroke="var(--blue)" stroke-width="2" /><polyline :points="chartLines.average" fill="none" stroke="var(--purple)" stroke-width="2" /></svg>
+              </div>
+              <div v-else class="empty"><span class="ring"><AppIcon name="award" :size="20" /></span><h3>Not enough games to plot</h3><p>A trend needs at least three completed games.</p></div>
+            </div>
+            <div class="card">
+              <header><h2>Hit breakdown</h2><span class="cnt">{{ activeStats.h }} hits</span></header>
+              <div class="pad">
+                <template v-if="activeStats.h">
+                  <div v-for="hb in [{ n: 'Singles', v: activeStats.oneB, c: '--blue' }, { n: 'Doubles', v: activeStats.twoB, c: '--purple' }, { n: 'Triples', v: activeStats.threeB, c: '--amber' }, { n: 'Home runs', v: activeStats.hr, c: '--green' }]" :key="hb.n" style="margin-bottom:13px">
+                    <div style="display:flex;font-size:13px;margin-bottom:6px"><span style="color:var(--mu-2)">{{ hb.n }}</span><b class="n" style="margin-left:auto">{{ hb.v }}</b><span class="n" style="color:var(--mu);width:42px;text-align:right">{{ Math.round((hb.v / activeStats.h) * 100) }}%</span></div>
+                    <div class="prog" style="margin:0"><div :style="{ width: ((hb.v / activeStats.h) * 100) + '%', background: 'var(' + hb.c + ')' }"></div></div>
+                  </div>
+                </template>
+                <p v-else style="margin:0;color:var(--mu-2);font-size:13px">No hits recorded yet.</p>
+              </div>
+            </div>
+            <div class="card" style="grid-column:1/-1">
+              <header><h2>Game log</h2><span class="cnt">{{ visibleTeamGames.length }} games</span></header>
+              <div v-if="visibleTeamGames.length" class="tw">
+                <table>
+                  <thead><tr><th class="l">Game</th><th>Result</th><th class="split">AB</th><th>H</th><th>1B</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>R</th><th>BB</th><th class="split">AVG</th><th>OBP</th></tr></thead>
+                  <tbody>
+                    <tr v-for="game in visibleTeamGames" :key="game.gameId">
+                      <td class="l">vs {{ game.opponentName }} · {{ game.dateLabel }}</td>
+                      <td>
+                        <span v-if="game.result === 'won'" class="chip g">Won</span>
+                        <span v-else-if="game.result === 'lost'" class="chip r">Lost</span>
+                        <span v-else class="chip a">Pending</span>
+                      </td>
+                      <td class="n split" :class="{ z: !Number(game.ab) }">{{ game.ab }}</td>
+                      <td class="n" :class="{ z: !Number(game.h) }">{{ game.h }}</td>
+                      <td class="n" :class="{ z: !Number(game.oneB) }">{{ game.oneB }}</td>
+                      <td class="n" :class="{ z: !Number(game.twoB) }">{{ game.twoB }}</td>
+                      <td class="n" :class="{ z: !Number(game.threeB) }">{{ game.threeB }}</td>
+                      <td class="n" :class="{ z: !Number(game.hr) }">{{ game.hr }}</td>
+                      <td class="n" :class="{ z: !Number(game.rbi) }">{{ game.rbi }}</td>
+                      <td class="n" :class="{ z: !Number(game.runs) }">{{ game.runs }}</td>
+                      <td class="n" :class="{ z: !Number(game.bb) }">{{ game.bb }}</td>
+                      <td class="n split" :class="{ z: !Number(game.ab) }">{{ Number(game.ab) ? game.average : '—' }}</td>
+                      <td class="n" :class="{ z: !Number(game.ab) }">{{ Number(game.ab) ? game.onbase : '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="empty"><span class="ring"><AppIcon name="document" :size="20" /></span><h3>{{ teamStats.games.length ? 'No matching games' : 'No team statistics yet' }}</h3><p>{{ teamStats.games.length ? 'Reset or change the filters to see more games.' : 'Completed scoresheets populate this event table.' }}</p></div>
+            </div>
+          </div>
+        </template>
+      </template>
     </template>
     </div>
 
