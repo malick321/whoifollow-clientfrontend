@@ -7,18 +7,32 @@
    Original untouched copy lives in docs/redesign/theme.css for diffing.
    ───────────────────────────────────────────────────────────────────────── */
 
+/* Redesign tokens are BRIDGED to the matchgeni design tokens (styles.css), so
+   the layout/structure comes from the mockups but every color is matchgeni's
+   and adapts to light/dark. No standalone palette. */
 .rd {
-  --bg:#0B0F12; --card:#191E26; --card-2:#1F252F; --card-3:#252C37; --card-4:#141A22;
-  --line:#252C37; --line-2:#313946; --line-3:#3D4757;
-  --tx:#E5EAF1; --mu:#5A7799; --mu-2:#8098B8; --off:#3B4655;
-  /* role colors — matchgeni-aligned */
-  --blue:#4FA3FF; --blue-bg:#12283F; --blue-line:#1E4671; --blue-row:#111C2B;
-  --purple:#A78BFA; --purple-bg:#24243B;
-  --green:#3AD970; --green-bg:#12301F; --green-line:#1F5B39;
-  --red:#FF6B78; --red-bg:#331A1E; --red-line:#5B2A2E;
-  --amber:#F5A524; --amber-bg:#33260F; --amber-line:#5B4415;
+  --bg:var(--body-bg);
+  --card:var(--surface-card); --card-2:var(--surface-raised); --card-3:var(--surface-pill); --card-4:var(--surface-muted);
+  --line:var(--border-divider); --line-2:var(--border-divider); --line-3:var(--border-accent);
+  --tx:var(--text); --mu:var(--text-light); --mu-2:var(--secondary);
+  --off:color-mix(in srgb, var(--text) 34%, transparent);
+  --blue:var(--primary);
+  --blue-bg:color-mix(in srgb, var(--primary) 14%, transparent);
+  --blue-line:color-mix(in srgb, var(--primary) 42%, var(--border-divider));
+  --blue-row:color-mix(in srgb, var(--primary) 8%, transparent);
+  --purple:var(--secondary); --purple-bg:color-mix(in srgb, var(--secondary) 16%, transparent);
+  --green:var(--success);
+  --green-bg:color-mix(in srgb, var(--success) 14%, transparent);
+  --green-line:color-mix(in srgb, var(--success) 42%, var(--border-divider));
+  --red:var(--highlight);
+  --red-bg:color-mix(in srgb, var(--highlight) 14%, transparent);
+  --red-line:color-mix(in srgb, var(--highlight) 42%, var(--border-divider));
+  --amber:var(--warning);
+  --amber-bg:color-mix(in srgb, var(--warning) 18%, transparent);
+  --amber-line:color-mix(in srgb, var(--warning) 42%, var(--border-divider));
+  --on-blue:#fff; /* text on a filled primary button */
   --r:10px;
-  --f:"Inter",system-ui,-apple-system,sans-serif;
+  --f:inherit;
   background:var(--bg); color:var(--tx);
   font:400 14px/1.5 var(--f); -webkit-font-smoothing:antialiased;
 }
@@ -37,7 +51,7 @@
 /* ── top bar ─────────────────────────────────────── */
 .rd .bar{position:sticky;top:0;z-index:40;background:rgba(11,15,18,.93);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .rd .bar-in{max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px}
-.rd .av{border-radius:50%;flex:none;display:grid;place-items:center;font-weight:600;color:#fff;background:#7A3038}
+.rd .av{border-radius:50%;flex:none;display:grid;place-items:center;font-weight:600;color:#fff;background:var(--surface-raised)}
 .rd .av.ring{border:1.5px solid var(--blue)}
 .rd .id{min-width:0}
 .rd .id h1{font:700 17px/1.2 var(--f);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -53,8 +67,8 @@
 /* ── buttons ─────────────────────────────────────── */
 .rd .btn{background:var(--card-2);border:1px solid var(--line-2);border-radius:8px;height:34px;padding:0 13px;display:inline-flex;align-items:center;gap:7px;font-size:13.5px;white-space:nowrap;color:var(--tx)}
 .rd .btn:hover{background:var(--card-3);border-color:var(--line-3)}
-.rd .btn.pri{background:var(--blue);border-color:var(--blue);color:#06121F;font-weight:600}
-.rd .btn.pri:hover{background:#6FB4FF;border-color:#6FB4FF}
+.rd .btn.pri{background:var(--blue);border-color:var(--blue);color:var(--on-blue);font-weight:600}
+.rd .btn.pri:hover{filter:brightness(1.06)}
 .rd .btn.dgr{color:var(--red);border-color:var(--red-line)}
 .rd .btn.dgr:hover{background:var(--red-bg);border-color:var(--red)}
 .rd .btn.sm{height:30px;padding:0 11px;font-size:13px}
@@ -68,7 +82,7 @@
 .rd .tabs{display:flex;gap:4px;padding:12px 0 18px;border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
 .rd .tabs button{background:none;border:0;border-radius:99px;height:34px;padding:0 15px;font:500 13.5px var(--f);color:var(--mu-2);display:inline-flex;align-items:center;gap:7px}
 .rd .tabs button:hover{background:var(--card);color:var(--tx)}
-.rd .tabs button[aria-selected=true]{background:var(--blue);color:#06121F;font-weight:600}
+.rd .tabs button[aria-selected=true]{background:var(--blue);color:var(--on-blue);font-weight:600}
 .rd .utabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:20px}
 .rd .utabs button{background:none;border:0;border-bottom:2px solid transparent;height:44px;padding:0 16px;font:500 14px var(--f);color:var(--mu-2);display:inline-flex;align-items:center;gap:8px;margin-bottom:-1px}
 .rd .utabs button:hover{color:var(--tx)}
@@ -111,7 +125,7 @@
 .rd .seg.push{margin-left:auto}
 .rd .seg button{border:0;background:none;border-radius:6px;height:26px;padding:0 11px;font:500 12.5px var(--f);color:var(--mu-2)}
 .rd .seg button:hover{color:var(--tx)}
-.rd .seg button[aria-pressed=true]{background:var(--blue);color:#06121F;font-weight:600}
+.rd .seg button[aria-pressed=true]{background:var(--blue);color:var(--on-blue);font-weight:600}
 .rd .rsvp{display:flex;gap:6px}
 .rd .rsvp button{flex:1;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--card-2);font:500 13px var(--f);color:var(--mu-2)}
 .rd .rsvp button:hover{border-color:var(--line-3);color:var(--tx)}
@@ -163,7 +177,7 @@
 .rd td.split,.rd th.split{border-left:1px solid var(--line-2)}
 .rd tr.top td{background:var(--blue-row)}
 .rd tr.top td.l{background:var(--blue-row);box-shadow:inset 2px 0 0 var(--blue)}
-.rd tr.top:hover td,.rd tr.top:hover td.l{background:#14233A}
+.rd tr.top:hover td,.rd tr.top:hover td.l{background:color-mix(in srgb, var(--primary) 12%, transparent)}
 .rd tfoot td{position:sticky;bottom:0;background:var(--card-2);font-weight:600;border-top:1px solid var(--line-2);border-bottom:0}
 .rd tfoot td.l{background:var(--card-2)}
 .rd .rank{width:18px;display:inline-block;color:var(--mu);font-weight:600;text-align:right;margin-right:9px}
@@ -212,7 +226,7 @@
 .rd .vs .sc.d{color:var(--off)}
 .rd .vs .sc.win{color:var(--green)}
 .rd .vs .mid{font-size:11px;color:var(--mu);text-align:center}
-.rd .map{height:150px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#1B222C}
+.rd .map{height:150px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--surface-raised)}
 
 @media(max-width:1000px){
   .rd .cols{grid-template-columns:minmax(0,1fr)}
