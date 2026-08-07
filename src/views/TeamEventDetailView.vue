@@ -351,53 +351,38 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="event-detail">
-    <section
-      v-if="overview"
-      class="condensed-team-header event-detail__condensed"
-      :class="{ 'condensed-team-header--visible': condensedHeaderVisible }"
-    >
-      <div class="condensed-team-header__main">
-        <div class="condensed-team-header__top">
-          <TeamAvatar :name="overview.name" :image-url="overview.avatarUrl ?? overview.team.logoUrl ?? undefined" size="md" />
-          <span class="condensed-team-header__name">{{ overview.name }}</span>
-        </div>
-        <div class="condensed-team-header__subline">{{ [overview.team.name, overview.dates.label].filter(Boolean).join(' · ') }}</div>
-      </div>
-    </section>
-
-    <section v-if="loadingOverview" class="ed-hero ed-loading" aria-busy="true">
-      <span class="ed-shimmer ed-shimmer--avatar"></span>
-      <span class="ed-shimmer ed-shimmer--title"></span>
-    </section>
-    <section v-else-if="overview" class="ed-hero">
-      <div class="ed-identity">
-        <button class="ed-back" type="button" title="Back to team" aria-label="Back to team" @click="router.push({ name: 'team-detail', params: { teamId } })">
-          <span aria-hidden="true">‹</span>
-        </button>
-        <TeamAvatar :name="overview.name" :image-url="overview.avatarUrl ?? overview.team.logoUrl ?? undefined" size="lg" />
-        <div class="ed-identity__copy">
-          <p>{{ overview.dates.label }}<span v-if="overview.dates.timezone"> ({{ overview.dates.timezone }})</span></p>
+  <main class="event-detail rd">
+    <!-- Sticky 64px identity bar (redesign shell). -->
+    <div class="bar"><div class="bar-in">
+      <template v-if="loadingOverview">
+        <span class="shimmer-circle" style="width:38px;height:38px" aria-hidden="true"></span>
+        <span class="shimmer-block" style="width:220px;height:20px;border-radius:6px" aria-hidden="true"></span>
+      </template>
+      <template v-else-if="overview">
+        <button type="button" class="btn ic" aria-label="Back to team" @click="router.push({ name: 'team-detail', params: { teamId } })">‹</button>
+        <TeamAvatar :name="overview.name" :image-url="overview.avatarUrl ?? overview.team.logoUrl ?? undefined" size="md" />
+        <div class="id">
           <h1>{{ overview.name }}</h1>
-          <div class="ed-tags">
-            <span v-if="overview.association">{{ overview.association }}</span>
-            <span v-if="overview.eventType">{{ overview.eventType }}</span>
-            <button type="button" @click="router.push({ name: 'team-detail', params: { teamId } })">
-              <AppIcon name="people" :size="14" />{{ overview.team.name }}
-            </button>
-          </div>
+          <p>
+            <span v-if="overview.eventType" class="chip n">{{ overview.eventType }}</span>
+            {{ overview.team.name }} · {{ overview.dates.label }}<template v-if="overview.dates.timezone"> · {{ overview.dates.timezone }}</template>
+            <template v-if="overview.association"> · {{ overview.association }}</template>
+          </p>
         </div>
-      </div>
-      <div class="ed-record">
-        <span><small>Games</small><b>{{ overview.record.games }}</b></span>
-        <span class="is-won"><small>Won</small><b>{{ overview.record.won }}</b></span>
-        <span class="is-lost"><small>Lost</small><b>{{ overview.record.lost }}</b></span>
-      </div>
-    </section>
+        <div class="rec">
+          <span class="n"><b :class="{ z: !overview.record.games }">{{ overview.record.games }}</b><i>GP</i></span>
+          <span class="n"><b :class="overview.record.won ? 'w' : 'z'">{{ overview.record.won }}</b><i>W</i></span>
+          <span class="n"><b :class="overview.record.lost ? 'l' : 'z'">{{ overview.record.lost }}</b><i>L</i></span>
+        </div>
+      </template>
+    </div></div>
 
-    <nav class="ed-tabs" role="tablist" aria-label="Event detail">
-      <button v-for="tab in TABS" :key="tab.key" type="button" role="tab" :aria-selected="activeTab === tab.key" :class="{ 'is-active': activeTab === tab.key }" @click="setTab(tab.key)">
+    <div class="shell">
+    <nav v-if="overview" class="utabs" role="tablist" aria-label="Event detail">
+      <button v-for="tab in TABS" :key="tab.key" type="button" role="tab" :aria-selected="activeTab === tab.key" @click="setTab(tab.key)">
         {{ tab.label }}
+        <span v-if="tab.key === 'boxscores' && games.length" class="cnt n">{{ games.length }}</span>
+        <span v-else-if="tab.key === 'player-stats' && players.length" class="cnt n">{{ players.length }}</span>
       </button>
     </nav>
 
@@ -641,6 +626,7 @@ onBeforeUnmount(() => {
         </template>
       </section>
     </template>
+    </div>
 
     <CreateGameModal
       v-if="overview"
@@ -664,7 +650,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.event-detail{--ed-bg:var(--body-bg);--ed-panel:var(--surface-card);--ed-panel-2:var(--surface-raised);--ed-border:var(--border-divider);--ed-text:var(--text);--ed-muted:var(--secondary);--ed-blue:var(--primary);--ed-violet:#8b43ef;--ed-green:var(--success);--ed-red:var(--highlight);color:var(--ed-text);max-width:1540px;margin:0 auto;padding:22px 22px 42px;min-height:calc(100vh - 64px);letter-spacing:0}
+.event-detail{--ed-bg:var(--body-bg);--ed-panel:var(--surface-card);--ed-panel-2:var(--surface-raised);--ed-border:var(--border-divider);--ed-text:var(--text);--ed-muted:var(--secondary);--ed-blue:var(--primary);--ed-violet:#8b43ef;--ed-green:var(--success);--ed-red:var(--highlight);color:var(--ed-text);width:100%;margin:0;padding:0;min-height:calc(100vh - 64px);letter-spacing:0}
+/* Redesign shell: pin the sticky .bar below the member top bar. */
+.event-detail .bar{top:56px}
+@media(max-width:720px){.event-detail .bar{top:52px}}
 .ed-hero,.ed-panel,.ed-stats-toolbar,.ed-metrics article{background:var(--ed-panel);border:1px solid var(--ed-border);border-radius:8px}
 .ed-hero{min-height:138px;padding:24px 30px;display:flex;align-items:center;justify-content:space-between;gap:28px}
 .ed-identity{display:flex;align-items:center;gap:20px;min-width:0}.ed-back,.ed-icon-btn{width:40px;height:40px;border:1px solid var(--ed-border);background:var(--surface-raised);color:var(--ed-text);display:grid;place-items:center;border-radius:8px;cursor:pointer}.ed-back span{font-size:32px;line-height:1;margin-top:-4px}.ed-identity__copy{min-width:0}.ed-identity__copy p{margin:0 0 7px;color:var(--ed-muted);font-size:14px}.ed-identity__copy h1{margin:0;font-size:29px;line-height:1.2;letter-spacing:0;overflow-wrap:anywhere}.ed-tags{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}.ed-tags>span,.ed-tags button{border:1px solid #21446c;background:#0a2748;color:var(--primary);padding:4px 10px;border-radius:6px;font-size:12px}.ed-tags>span:nth-child(2){background:#271454;border-color:#543198;color:#bf8cff}.ed-tags button{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--ed-text);cursor:pointer}
