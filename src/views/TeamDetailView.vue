@@ -365,6 +365,10 @@ function eventRail(label: string): { day: string; mon: string } {
   const m = String(label || '').match(/([A-Za-z]{3,})\s+(\d{1,2})/)
   return m ? { mon: m[1].slice(0, 3), day: m[2] } : { mon: '', day: '—' }
 }
+// Percentage of the roster for the make-up stacked bar (denominator = members).
+function pct(n: number): number {
+  return Math.round((n / (members.value.length || 1)) * 100)
+}
 
 function openEventDetail(eventId: string) {
   router.push({ name: 'team-event-detail', params: { teamId: teamId.value, eventId } })
@@ -938,121 +942,85 @@ onBeforeUnmount(() => {
 
       <!-- Teammates -->
       <template v-else-if="activeTab === 'teammates'">
-        <div class="td-content-grid">
-          <section class="td-content-card td-content-card--main">
-            <div class="td-section-title">
-              <span><h2>Teammates</h2><p>Manage players, admins and team followers.</p></span>
-              <b><AppIcon name="people" :size="18" /> {{ filteredMembers.length }} Members</b>
+        <div class="cols">
+          <div class="card">
+            <header>
+              <h2>Teammates</h2>
+              <span class="cnt">{{ members.length }} members</span>
+              <div class="sp">
+                <button type="button" class="btn sm" @click="printTeamInfo">Print</button>
+                <button type="button" class="btn pri sm" @click="inviteOpen = true">Invite to team</button>
+              </div>
+            </header>
+            <div class="filters">
+              <input v-model="memberSearch" type="text" placeholder="Search teammates" aria-label="Search teammates" style="flex:1;min-width:170px" />
+              <div class="seg" role="group" aria-label="Filter by role">
+                <button v-for="r in MEMBER_ROLES" :key="r.key" type="button" :aria-pressed="memberRole === r.key" @click="memberRole = r.key">
+                  {{ r.label }} {{ r.key === 'all' ? members.length : memberBreakdown[r.key] }}
+                </button>
+              </div>
             </div>
-        <div v-if="members.length" class="td-members-head">
-          <div class="td-members-actions">
-            <label class="td-search-wrap">
-              <AppIcon name="search" :size="15" />
-              <input v-model="memberSearch" type="search" class="td-search" placeholder="Search teammates" aria-label="Search teammates" />
-            </label>
-            <button type="button" class="td-toolbar-btn" @click="printTeamInfo">
-              <span class="td-asset-icon td-asset-icon--print" aria-hidden="true"></span>
-              <span>Print Team Info</span>
-            </button>
-            <button type="button" class="td-toolbar-btn" @click="inviteOpen = true">
-              <span class="td-asset-icon td-asset-icon--invite" aria-hidden="true"></span>
-              <span>Invite To Team</span>
-            </button>
+            <template v-if="filteredMembers.length">
+              <div v-for="m in filteredMembers" :key="m.memberId" class="mrow">
+                <TeamAvatar :name="m.name" :image-url="m.avatarUrl ?? undefined" size="sm" />
+                <div>
+                  <div class="nm">{{ m.name }}</div>
+                  <div class="rl">{{ m.uniformNo ? `#${m.uniformNo} · ` : '' }}{{ memberRoleLabel(m) }}</div>
+                </div>
+                <div class="sp">
+                  <span class="chip" :class="m.isAdmin ? 'p' : (m.isFan ? 'n' : 'b')">{{ memberRoleLabel(m) }}</span>
+                  <div class="td-member__menu" @click.stop>
+                    <button
+                      type="button"
+                      class="kebab"
+                      :aria-expanded="openMemberMenu === m.memberId"
+                      aria-label="Teammate options"
+                      @click="toggleMemberMenu(m.memberId)"
+                    >⋯</button>
+                    <ul v-if="openMemberMenu === m.memberId" class="td-menu">
+                      <li><button type="button" :disabled="!m.userChatId" @click="openMemberMessage(m)">Send direct message</button></li>
+                      <li><button type="button" :disabled="!m.userId" @click="viewPlayerStats(m.userId)">View player stats</button></li>
+                      <li v-if="canManageMember(m) && (m.isAdmin || m.isFan)"><button type="button" @click="changeMemberRole(m, 'teammate')">Make team member</button></li>
+                      <li v-if="canManageMember(m) && !m.isAdmin"><button type="button" @click="changeMemberRole(m, 'admin')">Make team admin</button></li>
+                      <li v-if="canManageMember(m) && !m.isFan"><button type="button" @click="changeMemberRole(m, 'fan')">Make fan</button></li>
+                      <li v-if="canManageMember(m)"><button type="button" class="is-danger" @click="removeMemberFromTeam(m)">Remove from team</button></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="empty">
+              <span class="ring"><AppIcon name="people" :size="20" /></span>
+              <h3>{{ members.length ? 'No matching teammates' : 'No teammates yet' }}</h3>
+              <p>{{ members.length ? 'No teammates match your search or filter.' : 'Invite people to build out this team roster.' }}</p>
+            </div>
           </div>
-        </div>
-        <div v-if="members.length" class="td-filter">
-          <button
-            v-for="r in MEMBER_ROLES"
-            :key="r.key"
-            type="button"
-            class="td-filter__chip"
-            :class="{ 'td-filter__chip--active': memberRole === r.key }"
-            @click="memberRole = r.key"
-          >{{ r.label }}</button>
-        </div>
-        <ul v-if="filteredMembers.length" class="team-detail__members">
-          <li v-for="m in filteredMembers" :key="m.memberId" class="td-member">
-            <TeamAvatar :name="m.name" :image-url="m.avatarUrl ?? undefined" size="sm" />
-            <span class="td-member__copy">
-              <span class="td-member__name">{{ m.name }}</span>
-              <span class="td-member__sub">{{ m.uniformNo ? `Jersey #${m.uniformNo}` : memberRoleLabel(m) }}</span>
-            </span>
-            <span class="td-member__role-pill" :class="`is-${memberRoleLabel(m).toLowerCase()}`">{{ memberRoleLabel(m) }}</span>
-            <div class="td-member__menu" @click.stop>
-              <button
-                type="button"
-                class="td-ellipsis"
-                :aria-expanded="openMemberMenu === m.memberId"
-                aria-label="Teammate options"
-                @click="toggleMemberMenu(m.memberId)"
-              >⋯</button>
-              <ul v-if="openMemberMenu === m.memberId" class="td-menu">
-                <li>
-                  <button type="button" :disabled="!m.userChatId" @click="openMemberMessage(m)">
-                    Send Direct Message
-                  </button>
-                </li>
-                <li>
-                  <button type="button" :disabled="!m.userId" @click="viewPlayerStats(m.userId)">
-                    View Player Stats
-                  </button>
-                </li>
-                <li v-if="canManageMember(m) && (m.isAdmin || m.isFan)">
-                  <button type="button" @click="changeMemberRole(m, 'teammate')">
-                    Make Team Member
-                  </button>
-                </li>
-                <li v-if="canManageMember(m) && !m.isAdmin">
-                  <button type="button" @click="changeMemberRole(m, 'admin')">
-                    Make Team Admin
-                  </button>
-                </li>
-                <li v-if="canManageMember(m) && !m.isFan">
-                  <button type="button" @click="changeMemberRole(m, 'fan')">
-                    Make Fan
-                  </button>
-                </li>
-                <li v-if="canManageMember(m)">
-                  <button type="button" class="is-danger" @click="removeMemberFromTeam(m)">
-                    Remove From Team
-                  </button>
-                </li>
-              </ul>
+
+          <div class="stack-v">
+            <div class="card">
+              <header><h2>Roster make-up</h2></header>
+              <div class="pad">
+                <div class="sbar">
+                  <div :style="{ width: pct(memberBreakdown.admins) + '%', background: 'var(--purple)' }"></div>
+                  <div :style="{ width: pct(memberBreakdown.players) + '%', background: 'var(--blue)' }"></div>
+                  <div :style="{ width: pct(memberBreakdown.fans) + '%', background: 'var(--green)' }"></div>
+                </div>
+                <div class="keys">
+                  <div><span class="sw" style="background:var(--purple)"></span><span class="lb">Admins</span><span class="pc n">{{ pct(memberBreakdown.admins) }}%</span><span class="vl n">{{ memberBreakdown.admins }}</span></div>
+                  <div><span class="sw" style="background:var(--blue)"></span><span class="lb">Players</span><span class="pc n">{{ pct(memberBreakdown.players) }}%</span><span class="vl n">{{ memberBreakdown.players }}</span></div>
+                  <div><span class="sw" style="background:var(--green)"></span><span class="lb">Fans</span><span class="pc n">{{ pct(memberBreakdown.fans) }}%</span><span class="vl n">{{ memberBreakdown.fans }}</span></div>
+                </div>
+                <p v-if="members.length && memberBreakdown.players < 9" style="margin:13px 0 0;padding:10px 11px;background:var(--amber-bg);border-radius:8px;font-size:12.5px;color:var(--amber);line-height:1.5">
+                  Only {{ memberBreakdown.players }} {{ memberBreakdown.players === 1 ? 'player' : 'players' }} on the roster. You need 9 to field a lineup.
+                </p>
+              </div>
             </div>
-          </li>
-        </ul>
-        <div v-else class="matchgeni-placeholder">
-          <h3 class="matchgeni-placeholder__title">{{ members.length ? 'No matching teammates' : 'No teammates yet' }}</h3>
-          <p class="matchgeni-placeholder__copy">{{ members.length ? 'No teammates match your search or filter.' : 'Invite people to build out this team roster.' }}</p>
-        </div>
-          </section>
-          <aside class="td-side-stack">
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Team Overview</h3></div>
-              <div class="td-overview">
-                <div class="td-member-ring" :style="memberRingStyle">
-                  <span><b>{{ members.length }}</b><small>Members</small></span>
-                </div>
-                <div class="td-overview__legend">
-                  <span><i class="is-violet"></i>Admins <b>{{ memberBreakdown.admins }}</b></span>
-                  <span><i class="is-blue"></i>Players <b>{{ memberBreakdown.players }}</b></span>
-                  <span><i class="is-green"></i>Fans <b>{{ memberBreakdown.fans }}</b></span>
-                </div>
-              </div>
-            </section>
-            <section class="td-side-card">
-              <div class="td-side-card__head"><h3>Quick Actions</h3></div>
-              <div class="td-action-list">
-                <button type="button" @click="inviteOpen = true"><span class="td-action-list__icon"><AppIcon name="people" :size="18" /></span><span><b>Invite via Link</b><small>Share join link with others</small></span><b>›</b></button>
-                <button type="button" @click="inviteOpen = true"><span class="td-action-list__icon is-violet"><AppIcon name="people" :size="18" /></span><span><b>Bulk Invite</b><small>Invite multiple members</small></span><b>›</b></button>
-                <button type="button" @click="openTeamSettings"><span class="td-action-list__icon"><AppIcon name="task" :size="18" /></span><span><b>Manage Roles</b><small>Update roles and permissions</small></span><b>›</b></button>
-              </div>
-            </section>
-            <section class="td-side-card td-help-card">
-              <AppIcon name="help" :size="34" />
-              <span><h3>Need Help?</h3><p>Learn how to manage your team.</p></span>
-            </section>
-          </aside>
+            <div class="card">
+              <header><h2>Grow the roster</h2></header>
+              <button type="button" class="qa" @click="inviteOpen = true"><span class="ico"><AppIcon name="people" :size="15" /></span><span><b>Invite via link</b><span>Anyone with the link can join</span></span><span class="ch">›</span></button>
+              <button type="button" class="qa" @click="openTeamSettings"><span class="ico"><AppIcon name="task" :size="15" /></span><span><b>Manage roles</b><span>Update roles and permissions</span></span><span class="ch">›</span></button>
+            </div>
+          </div>
         </div>
       </template>
 
